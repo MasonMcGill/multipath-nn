@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+import json
+
+import numpy as np
+import numpy.random as rand
+import pprintpp as pp
+import scipy.io as io
+
+from neural_trees_v3 import *
+
+################################################################################
+# Data Loading
+################################################################################
+
+mnist = io.loadmat('mnist.mat')
+
+x_tr = np.vstack([mnist['train%i' % i].T for i in range(10)])
+x_ts = np.vstack([mnist['test%i' % i].T for i in range(10)])
+
+y_tr = np.int32(np.vstack([
+    i * np.ones((mnist['train%i' % i].shape[1], 1))
+    for i in range(10)]))
+y_ts = np.int32(np.vstack([
+    i * np.ones((mnist['test%i' % i].shape[1], 1))
+    for i in range(10)]))
+
+################################################################################
+# Logging
+################################################################################
+
+def layer_desc(layer):
+    return {'size': int(layer.w_out.shape[0].eval()),
+            'op_count': int(layer.tf.n_ops),
+            'children': [layer_desc(ch) for ch in layer.children]}
+
+def net_desc(net, **hyperparams):
+    n_cor = 10 * [None]
+    n_inc = 10 * [None]
+    for i in range(10):
+        x_i = x_ts[(y_ts == i)[:, 0]]
+        y_est = net.classify(x_i)
+        δ_cor = y_est == i
+        δ_inc = (y_est >= 0) * (y_est < 10) * (y_est != i)
+        n_cor[i] = np.sum(δ_cor, axis=0)
+        n_inc[i] = np.sum(δ_inc, axis=0)
+    l = 0
+    root = layer_desc(net.root)
+    def annotate(layer):
+        nonlocal l
+        layer['n_correct'] = np.array(n_cor)[:, l].tolist()
+        layer['n_incorrect'] = np.array(n_inc)[:, l].tolist()
+        l += 1
+        for child in layer['children']:
+            annotate(child)
+    annotate(root)
+    return {'hyperparams': hyperparams, 'root': root}
+
+################################################################################
+# Network Training and Evaluation
+################################################################################
+
+k_cpts = [0e-7]#[0, 5e-7, 1e-6, 2e-6, 4e-6] #1e-7 * np.arange(20)
+k_l2 = 1e-4
+w_scale = 1e-3
+ϵ = 0.5
+λ = 1e-1
+batch_size = 64
+n_epochs = 500
+
+def train_1_epoch(net, k_cpt):
+    order = rand.permutation(x_tr.shape[0])
+    x = np.take(x_tr, order, axis=0)
+    y = np.take(y_tr, order, axis=0)
+    costs = []
+    for i in range(0, x_tr.shape[0] - batch_size, batch_size):
+        c = net.train(x[i:i+batch_size], y[i:i+batch_size], k_cpt, k_l2, ϵ, λ)
+        costs.append(c)
+    return np.mean(costs)
+
+results = []
+
+for k_cpt in k_cpts:
+    # net = Net(784,
+    #     Layer(10, w_scale, IdentityTF(), [
+    #         Layer(10, w_scale, ReLuTF(256, w_scale), [
+    #             Layer(10, w_scale, ReLuTF(256, w_scale), [])])]))
+
+    net = Net(784,
+        Layer(10, w_scale, IdentityTF(), [
+            Layer(10, w_scale, ConvTF((1, 28, 28), (20, 1, 5, 5), w_scale), [
+                Layer(10, w_scale, ReLuTF(256, w_scale), [])])]))
+
+    # net = Net(
+    #     Layer(784, 10, w_scale, IdentityTF(784), [
+    #         Layer(256, 10, w_scale, ReLuTF(784, 256, w_scale), [
+    #             Layer(256, 10, w_scale, ReLuTF(256, 256, w_scale), []),
+    #             Layer(256, 10, w_scale, ReLuTF(256, 256, w_scale), [])
+    #         ]),
+    #         Layer(256, 10, w_scale, ReLuTF(784, 256, w_scale), [
+    #             Layer(256, 10, w_scale, ReLuTF(256, 256, w_scale), []),
+    #             Layer(256, 10, w_scale, ReLuTF(256, 256, w_scale), [])
+    #         ])
+    #     ])
+    # )
+
+    print('Training a network with k_cpt=%.1e...' % k_cpt)
+    for t in range(1, n_epochs + 1):
+        cost = train_1_epoch(net, k_cpt)
+        print('Finished epoch %i. Cost=%f' % (t, cost))
+        if t % 10 == 0:
+            desc = net_desc(
+                net, k_l2=k_l2, k_cpt=k_cpt, w_scale=w_scale,
+                ϵ=ϵ, λ=λ, batch_size=batch_size, n_epochs=t)
+            print('Current network:', pp.pformat(desc, indent=2))
+    results.append(net_desc(
+        net, k_l2=k_l2, k_cpt=k_cpt, w_scale=w_scale,
+        ϵ=ϵ, λ=λ, batch_size=batch_size, n_epochs=n_epochs))
+
+with open('experiment_0-cas.json', 'w') as f:
+    f.write(json.dumps(
+        results, sort_keys=True, indent=2,
+        separators=(',', ': ')))
