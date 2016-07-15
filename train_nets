@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+import numpy as np
+import tensorflow as tf
+
+from lib import data, nets
+
+################################################################################
+# Load data.
+################################################################################
+
+dataset = data.Dataset()
+
+################################################################################
+# Train networks.
+################################################################################
+
+def log_progress(sess, net, t, batch_size=512):
+    mean_ℓ_tr = np.mean([
+        sess.run(net.ℓ_ev, {net.x0: x0, net.y: y})
+        for x0, y in dataset.training_batches(batch_size)])
+    mean_ℓ_ev = np.mean([
+        sess.run(net.ℓ_ev, {net.x0: x0, net.y: y})
+        for x0, y in dataset.test_batches(batch_size)])
+    print('  t=%i; mean_ℓ_tr=%f; mean_ℓ_ev=%f'
+          % (t, mean_ℓ_tr, mean_ℓ_ev))
+
+def train(net, desc, batch_size=64, n_epochs=200, logging_period=1):
+    print('Training "%s:"' % desc)
+    train = tf.train.AdamOptimizer().minimize(net.ℓ_tr)
+    saver = tf.train.Saver()
+    with tf.Session() as sess:
+        sess.run(tf.initialize_all_variables())
+        for t in range(n_epochs):
+            if t % logging_period == 0:
+                log_progress(sess, net, t)
+            for x0, y in dataset.training_batches(batch_size):
+                train.run({net.x0: x0, net.y: y})
+        saver.save(sess, join(args.net_path, desc + '.tfn'),
+                   write_meta_graph=False)
+
+k_cpts = [0, 5e-7, 1e-6, 2e-6, 4e-6]
+net_constructors = [
+    nets.ds_fc_cascade, nets.ds_fc_bintree]
+
+for c in net_constructors:
+    for i, k_cpt in enumerate(k_cpts):
+        train(c(k_cpt), '%s_%i' % (c.__name__, i))

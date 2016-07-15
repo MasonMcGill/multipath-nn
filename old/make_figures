@@ -13,8 +13,6 @@ import seaborn as sbn
 with open('experiment_0_1-cas.json', 'r') as f:
     nets = json.loads(f.read())
 
-# print(nets[0])
-
 ################################################################################
 # Statistic Definitions
 ################################################################################
