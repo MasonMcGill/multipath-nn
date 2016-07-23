@@ -3,7 +3,9 @@ import numpy as np
 import tensorflow as tf
 
 from lib.data import Dataset
-from lib.nets import CRRouting, DSRouting, LogReg, Net, ReConv, ReConvMP, ReLin
+from lib.nets import (
+    CRRouting, DSRouting, LogReg, Net, ReConv, ReConvMP, ReLin,
+    SmartCRRouting, SmartDSRouting)
 
 ################################################################################
 # Load data.
@@ -79,14 +81,20 @@ def describe(layer, λ_cor, λ_inc):
                 for i, s in enumerate(layer.sinks)))
 
 def log_progress(sess, net, t):
-    def n_cor(layer):
-        cor = tf.equal(tf.argmax(layer.y_est, 1), tf.argmax(net.y, 1))
-        return (len(layer.sinks) == 0) * layer.p_ev * tf.to_float(cor)
-    def n_inc(layer):
-        inc = tf.not_equal(tf.argmax(layer.y_est, 1), tf.argmax(net.y, 1))
-        return (len(layer.sinks) == 0) * layer.p_ev * tf.to_float(inc)
-    λ_cor = mean_ev(sess, net, n_cor)
-    λ_inc = mean_ev(sess, net, n_inc)
+    def p_cor(layer):
+        if len(layer.sinks) == 0:
+            δ_cor = tf.equal(tf.argmax(layer.x, 1), tf.argmax(net.y, 1))
+            return layer.p_ev * tf.to_float(δ_cor)
+        else:
+            return tf.zeros(tf.shape(layer.x)[:1])
+    def p_inc(layer):
+        if len(layer.sinks) == 0:
+            δ_inc = tf.not_equal(tf.argmax(layer.x, 1), tf.argmax(net.y, 1))
+            return layer.p_ev * tf.to_float(δ_inc)
+        else:
+            return tf.zeros(tf.shape(layer.x)[:1])
+    λ_cor = mean_ev(sess, net, p_cor)
+    λ_inc = mean_ev(sess, net, p_inc)
     print('····························································')
     print(' Epoch %i' % t)
     print('····························································')
@@ -98,7 +106,7 @@ def log_progress(sess, net, t):
 ################################################################################
 
 def train(net, batch_size=64, n_epochs=100, logging_period=5):
-    train_op = tf.train.AdamOptimizer().minimize(net.ℓ_tr)
+    train_op = tf.train.AdamOptimizer().minimize(tf.reduce_mean(net.ℓ_tr))
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
         for t in range(n_epochs):
@@ -108,7 +116,7 @@ def train(net, batch_size=64, n_epochs=100, logging_period=5):
                 train_op.run({net.x0: x0, net.y: y})
         log_progress(sess, net, 100)
 
-k_cpt = 0e-8
+k_cpt = 2e-8
 
 # train(Net(x0_shape, y_shape,
 #     ReConvMP(32, 2, 5, k_cpt, 1e-3,
@@ -117,14 +125,29 @@ k_cpt = 0e-8
 #                 ReLin(512, k_cpt, 1e-2,
 #                     LogReg(n_cls, 1e-2)))))))
 
-train(Net(x0_shape, y_shape, DSRouting(0.5, LogReg(n_cls, 0),
-    ReConvMP(32, 2, 5, k_cpt, 0, DSRouting(0.5, LogReg(n_cls, 0),
-        ReConvMP(128, 2, 5, k_cpt, 0, DSRouting(0.5, LogReg(n_cls, 0),
-            ReConvMP(256, 2, 5, k_cpt, 0, DSRouting(0.5, LogReg(n_cls, 0),
-                ReLin(512, k_cpt, 0, LogReg(n_cls, 0)))))))))))
+# train(Net(x0_shape, y_shape, DSRouting(0.5, LogReg(n_cls, 0),
+#     ReConvMP(32, 2, 5, k_cpt, 0, DSRouting(0.5, LogReg(n_cls, 0),
+#         ReConvMP(128, 2, 5, k_cpt, 0, DSRouting(0.5, LogReg(n_cls, 0),
+#             ReConvMP(256, 2, 5, k_cpt, 0, DSRouting(0.5, LogReg(n_cls, 0),
+#                 ReLin(512, k_cpt, 0, LogReg(n_cls, 0)))))))))))
 
 # train(Net(x0_shape, y_shape, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
 #     ReConvMP(32, 2, 5, k_cpt, 0, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
-#         ReConvMP(128, 2, 5, k_cpt, 0, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
-#             ReConvMP(256, 2, 5, k_cpt, 0, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
-#                 ReLin(512, k_cpt, 0, LogReg(n_cls, 0)))))))))))
+#         ReConvMP(64, 2, 5, k_cpt, 0, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
+#             ReLin(128, k_cpt, 0, LogReg(n_cls, 0)))))))))))
+
+# train(Net(x0_shape, y_shape, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
+#     ReConvMP(32, 2, 5, k_cpt, 0, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
+#         ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)),
+#         ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)))),
+#     ReConvMP(32, 2, 5, k_cpt, 0, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
+#         ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)),
+#         ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)))))))
+
+train(Net(x0_shape, y_shape, SmartCRRouting(1e-1, 0.5, LogReg(n_cls, 0),
+    ReConvMP(32, 2, 5, k_cpt, 0, SmartCRRouting(1e-1, 0.5, LogReg(n_cls, 0),
+        ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)),
+        ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)))),
+    ReConvMP(32, 2, 5, k_cpt, 0, SmartCRRouting(1e-1, 0.5, LogReg(n_cls, 0),
+        ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)),
+        ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)))))))
