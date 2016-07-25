@@ -17,53 +17,17 @@ y_shape = dataset.y_shape
 n_cls = y_shape[0]
 
 ################################################################################
-# Define network constructors.
-################################################################################
-
-# def ds_fc_cascade(k_cpt=0):
-#     return Net(x0_shape, y_shape,
-#         DSRouting(0.5, LogReg(n_cls),
-#             ReLin(256, k_cpt, DSRouting(0.5, LogReg(n_cls),
-#                 ReLin(256, k_cpt, LogReg(n_cls))))))
-#
-# def ds_fc_bintree(k_cpt=0):
-#     return Net(x0_shape, y_shape,
-#         DSRouting(0.5, LogReg(n_cls),
-#             ReLin(256, k_cpt, DSRouting(0.5, LogReg(n_cls),
-#                 ReLin(256, k_cpt, LogReg(n_cls)),
-#                 ReLin(256, k_cpt, LogReg(n_cls)))),
-#             ReLin(256, k_cpt, DSRouting(0.5, LogReg(n_cls),
-#                 ReLin(256, k_cpt, LogReg(n_cls)),
-#                 ReLin(256, k_cpt, LogReg(n_cls))))))
-#
-# def ds_cc_cascade(k_cpt=0):
-#     return Net(x0_shape, y_shape,
-#         DSRouting(0.5, LogReg(n_cls),
-#             ReConv(64, 2, 5, k_cpt, DSRouting(0.5, LogReg(n_cls),
-#                 ReConv(64, 2, 5, k_cpt, LogReg(n_cls))))))
-#
-# def ds_cc_bintree(k_cpt=0):
-#     return Net(x0_shape, y_shape,
-#         DSRouting(0.5, LogReg(n_cls),
-#             ReConv(64, 2, 5, k_cpt, DSRouting(0.5, LogReg(n_cls),
-#                 ReConv(64, 2, 5, k_cpt, LogReg(n_cls)),
-#                 ReConv(64, 2, 5, k_cpt, LogReg(n_cls)))),
-#             ReConv(64, 2, 5, k_cpt, DSRouting(0.5, LogReg(n_cls),
-#                 ReConv(64, 2, 5, k_cpt, LogReg(n_cls)),
-#                 ReConv(64, 2, 5, k_cpt, LogReg(n_cls))))))
-
-################################################################################
 # Define logging functions.
 ################################################################################
 
-def mean_ev(sess, net, func, batch_size=512):
+def mean_over(batches, sess, net, func):
     sums = np.zeros(len(list(net.layers)), object)
     count = 0
-    for x0, y in dataset.test_batches(batch_size):
+    for x0, y in batches:
         stats = sess.run(list(map(func, net.layers)), {net.x0: x0, net.y: y})
         for i in range(len(sums)):
             sums[i] += np.sum(stats[i], 0)
-        count += batch_size
+        count += len(x0)
     return {l: s / count for l, s in zip(net.layers, sums)}
 
 def describe(layer, λ_cor, λ_inc):
@@ -80,7 +44,7 @@ def describe(layer, λ_cor, λ_inc):
                     '\n', '\n| ' if i < len(layer.sinks) - 1 else '\n  ')
                 for i, s in enumerate(layer.sinks)))
 
-def log_progress(sess, net, t):
+def log_progress(sess, net, t, batch_size=512):
     def p_cor(layer):
         if len(layer.sinks) == 0:
             δ_cor = tf.equal(tf.argmax(layer.x, 1), tf.argmax(net.y, 1))
@@ -93,8 +57,8 @@ def log_progress(sess, net, t):
             return layer.p_ev * tf.to_float(δ_inc)
         else:
             return tf.zeros(tf.shape(layer.x)[:1])
-    λ_cor = mean_ev(sess, net, p_cor)
-    λ_inc = mean_ev(sess, net, p_inc)
+    λ_cor = mean_over(dataset.test_batches(batch_size), sess, net, p_cor)
+    λ_inc = mean_over(dataset.test_batches(batch_size), sess, net, p_inc)
     print('····························································')
     print(' Epoch %i' % t)
     print('····························································')
@@ -102,7 +66,7 @@ def log_progress(sess, net, t):
               .replace('\n', '\n⋮   '))
 
 ################################################################################
-# Train networks.
+# Define a trining function.
 ################################################################################
 
 def train(net, batch_size=64, n_epochs=100, logging_period=5):
@@ -116,38 +80,45 @@ def train(net, batch_size=64, n_epochs=100, logging_period=5):
                 train_op.run({net.x0: x0, net.y: y})
         log_progress(sess, net, 100)
 
-k_cpt = 2e-8
+################################################################################
+# Train networks.
+################################################################################
+
+k_cpt = 0e-7
+k_l2 = 1e-5
 
 # train(Net(x0_shape, y_shape,
-#     ReConvMP(32, 2, 5, k_cpt, 1e-3,
-#         ReConvMP(128, 2, 5, k_cpt, 1e-3,
-#             ReConvMP(256, 2, 5, k_cpt, 1e-3,
-#                 ReLin(512, k_cpt, 1e-2,
-#                     LogReg(n_cls, 1e-2)))))))
+#     ReConvMP(32, 2, 5, k_cpt, k_l2,
+#         ReConvMP(64, 2, 5, k_cpt, k_l2,
+#             ReLin(128, k_cpt, k_l2, LogReg(n_cls, k_l2))))))
 
-# train(Net(x0_shape, y_shape, DSRouting(0.5, LogReg(n_cls, 0),
-#     ReConvMP(32, 2, 5, k_cpt, 0, DSRouting(0.5, LogReg(n_cls, 0),
-#         ReConvMP(128, 2, 5, k_cpt, 0, DSRouting(0.5, LogReg(n_cls, 0),
-#             ReConvMP(256, 2, 5, k_cpt, 0, DSRouting(0.5, LogReg(n_cls, 0),
-#                 ReLin(512, k_cpt, 0, LogReg(n_cls, 0)))))))))))
+# train(Net(x0_shape, y_shape, DSRouting(0.5, LogReg(n_cls, k_l2),
+#     ReConvMP(32, 2, 5, k_cpt, k_l2, DSRouting(0.5, LogReg(n_cls, k_l2),
+#         ReConvMP(64, 2, 5, k_cpt, k_l2, DSRouting(0.5, LogReg(n_cls, k_l2),
+#             ReLin(128, k_cpt, k_l2, LogReg(n_cls, 0)))))))))
 
-# train(Net(x0_shape, y_shape, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
-#     ReConvMP(32, 2, 5, k_cpt, 0, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
-#         ReConvMP(64, 2, 5, k_cpt, 0, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
-#             ReLin(128, k_cpt, 0, LogReg(n_cls, 0)))))))))))
+train(Net(x0_shape, y_shape, CRRouting(0.1, 0.5, LogReg(n_cls, k_l2),
+    ReConvMP(32, 2, 5, k_cpt, k_l2, CRRouting(0.1, 0.5, LogReg(n_cls, k_l2),
+        ReConvMP(64, 2, 5, k_cpt, k_l2, CRRouting(0.1, 0.5, LogReg(n_cls, k_l2),
+            ReLin(128, k_cpt, k_l2, LogReg(n_cls, k_l2)))))))))
 
-# train(Net(x0_shape, y_shape, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
-#     ReConvMP(32, 2, 5, k_cpt, 0, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
+# train(Net(x0_shape, y_shape, SmartCRRouting(0.1, 0.5, LogReg(n_cls, k_l2),
+#     ReConvMP(32, 2, 5, k_cpt, k_l2, SmartCRRouting(0.1, 0.5, LogReg(n_cls, k_l2),
+#         ReConvMP(64, 2, 5, k_cpt, k_l2, SmartCRRouting(0.1, 0.5, LogReg(n_cls, k_l2),
+#             ReLin(128, k_cpt, k_l2, LogReg(n_cls, k_l2)))))))))
+
+# train(Net(x0_shape, y_shape, CRRouting(0.1, 0.5, LogReg(n_cls, 0),
+#     ReConvMP(32, 2, 5, k_cpt, 0, CRRouting(0.1, 0.5, LogReg(n_cls, 0),
 #         ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)),
 #         ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)))),
-#     ReConvMP(32, 2, 5, k_cpt, 0, CRRouting(1e-1, 0.5, LogReg(n_cls, 0),
+#     ReConvMP(32, 2, 5, k_cpt, 0, CRRouting(0.1, 0.5, LogReg(n_cls, 0),
 #         ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)),
 #         ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)))))))
 
-train(Net(x0_shape, y_shape, SmartCRRouting(1e-1, 0.5, LogReg(n_cls, 0),
-    ReConvMP(32, 2, 5, k_cpt, 0, SmartCRRouting(1e-1, 0.5, LogReg(n_cls, 0),
-        ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)),
-        ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)))),
-    ReConvMP(32, 2, 5, k_cpt, 0, SmartCRRouting(1e-1, 0.5, LogReg(n_cls, 0),
-        ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)),
-        ReConvMP(64, 2, 5, k_cpt, 0, LogReg(n_cls, 0)))))))
+# train(Net(x0_shape, y_shape, SmartCRRouting(0.1, 0.5, LogReg(n_cls, k_l2),
+#     ReConvMP(32, 2, 5, k_cpt, k_l2, SmartCRRouting(0.1, 0.5, LogReg(n_cls, k_l2),
+#         ReConvMP(64, 2, 5, k_cpt, k_l2, LogReg(n_cls, k_l2)),
+#         ReConvMP(64, 2, 5, k_cpt, k_l2, LogReg(n_cls, k_l2)))),
+#     ReConvMP(32, 2, 5, k_cpt, k_l2, SmartCRRouting(0.1, 0.5, LogReg(n_cls, k_l2),
+#         ReConvMP(64, 2, 5, k_cpt, k_l2, LogReg(n_cls, k_l2)),
+#         ReConvMP(64, 2, 5, k_cpt, k_l2, LogReg(n_cls, k_l2)))))))

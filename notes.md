@@ -2,8 +2,9 @@
 
 - Pretraining vs. no pretraining
 - Static routing vs. dynamic routing
+- Static regularization vs. dynamic regularization
+- Regularization in c_tr vs. regularization in c_ev
 - Decision smoothing vs. cost regression
-- Static vs. dynamic L2 regularization
 - Smart routing vs. dumb routing
 - Trees vs. cascades
 - Growing vs. planting

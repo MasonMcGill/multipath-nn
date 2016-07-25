@@ -21,24 +21,29 @@ class Net:
                 sink.p_tr = layer.p_tr * layer.π_tr[:, i]
                 sink.p_ev = layer.p_ev * layer.π_ev[:, i]
                 link(sink, layer.x)
-            layer.ℓℓ_stat = tf.zeros(tf.shape(x)[:1])
-            layer.ℓℓ_dyn = tf.zeros(tf.shape(x)[:1])
+            layer.λ_tr = (
+                layer.p_tr
+                + sum(layer.π_tr[:, i] * s.λ_tr
+                      for i, s in enumerate(layer.sinks)))
+            layer.λ_ev = (
+                layer.p_tr
+                + sum(layer.π_ev[:, i] * s.λ_ev
+                      for i, s in enumerate(layer.sinks)))
+            layer.ℓℓ_tr = tf.zeros(tf.shape(x)[:1])
+            layer.ℓℓ_ev = tf.zeros(tf.shape(x)[:1])
             layer.link_backward(self.y)
-            layer.ℓ_stat = (
-                layer.ℓℓ_stat
-                + sum(s.ℓ_stat for s in layer.sinks))
             layer.ℓ_tr = (
-                layer.ℓℓ_dyn
+                layer.ℓℓ_tr
                 + sum(layer.π_tr[:, i] * s.ℓ_tr
                       for i, s in enumerate(layer.sinks)))
             layer.ℓ_ev = (
-                layer.ℓℓ_dyn
+                layer.ℓℓ_ev
                 + sum(layer.π_ev[:, i] * s.ℓ_ev
                       for i, s in enumerate(layer.sinks)))
         link(root, self.x0)
         self.root = root
-        self.ℓ_tr = root.ℓℓ_stat + root.ℓ_tr
-        self.ℓ_ev = root.ℓℓ_stat + root.ℓ_ev
+        self.ℓ_tr = root.ℓ_tr
+        self.ℓ_ev = root.ℓ_ev
 
     @property
     def layers(self):
@@ -71,7 +76,8 @@ class ReLin:
     def link_backward(self, y):
         ℓ_cpt = self.k_cpt * np.prod(self.w.get_shape().as_list())
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
-        self.ℓℓ_dyn = ℓ_cpt + ℓ_l2
+        self.ℓℓ_tr = ℓ_cpt + ℓ_l2
+        self.ℓℓ_ev = ℓ_cpt
 
 class ReConv:
     def __init__(self, n_chan, step, supp, k_cpt, k_l2, sink):
@@ -99,7 +105,8 @@ class ReConv:
         n_ops = np.prod(self.w.get_shape().as_list()) * n_pix / self.step**2
         ℓ_cpt = self.k_cpt * n_ops
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
-        self.ℓℓ_dyn = ℓ_cpt + ℓ_l2
+        self.ℓℓ_tr = ℓ_cpt + ℓ_l2
+        self.ℓℓ_ev = ℓ_cpt
 
 class ReConvMP:
     def __init__(self, n_chan, step, supp, k_cpt, k_l2, sink):
@@ -129,7 +136,8 @@ class ReConvMP:
         n_ops = np.prod(self.w.get_shape().as_list()) * n_pix
         ℓ_cpt = self.k_cpt * n_ops
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
-        self.ℓℓ_dyn = ℓ_cpt + ℓ_l2
+        self.ℓℓ_tr = ℓ_cpt + ℓ_l2
+        self.ℓℓ_ev = ℓ_cpt
 
 ################################################################################
 # Regression Layers
@@ -154,7 +162,8 @@ class LogReg:
     def link_backward(self, y):
         ℓ_err = -tf.reduce_sum(y * tf.log(tf.maximum(self.ϵ, self.x)), 1)
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
-        self.ℓℓ_dyn = ℓ_err + ℓ_l2
+        self.ℓℓ_tr = ℓ_err + ℓ_l2
+        self.ℓℓ_ev = ℓ_err
 
 ################################################################################
 # Routing Layers
@@ -201,7 +210,7 @@ class CRRouting:
             tf.equal(self.ℓ_est, tf.reduce_min(self.ℓ_est, 1, True)))
 
     def link_backward(self, y):
-        self.ℓℓ_stat = self.k_cre * sum(
+        self.ℓℓ_tr = self.k_cre * sum(
             tf.square(self.sinks[i].ℓ_ev - self.ℓ_est[:, i])
             for i in range(len(self.sinks)))
 
@@ -259,6 +268,6 @@ class SmartCRRouting:
             tf.equal(self.ℓ_est, tf.reduce_min(self.ℓ_est, 1, True)))
 
     def link_backward(self, y):
-        self.ℓℓ_stat = self.k_cre * sum(
+        self.ℓℓ_tr = self.p_tr * self.k_cre * sum(
             tf.square(self.sinks[i].ℓ_ev - self.ℓ_est[:, i])
             for i in range(len(self.sinks)))
