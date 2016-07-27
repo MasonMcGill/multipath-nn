@@ -1,3 +1,9 @@
+# Narrative
+
+- Start with a small convnet to predict digit labels
+- Add DS routing to short-circuit the network, saving computation
+- Compare with CR routing
+
 # Experiments
 
 - Pretraining vs. no pretraining

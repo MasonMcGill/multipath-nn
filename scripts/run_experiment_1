@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+'''
+Compare the accuracy and efficiency of statically-routed networks and
+dynamically-routed networks (trained via decision smoothing).
+'''
+from argparse import ArgumentParser
+
+import numpy as np
+
+from lib.data import Dataset
+from lib.nets import DSRouting, LogReg, Net, ReConvMP, SmartDSRouting
+from lib.training import train
+
+################################################################################
+# Parse the command-line arguments.
+################################################################################
+
+parser = ArgumentParser(description=__doc__)
+parser.add_argument(
+    '--data-path', metavar='PATH', default='data/mnist.mat', help=(
+        'specify the MAT file from which to source images and labels'
+        + ' (default: \'%(default)s\')'))
+parser.add_argument(
+    '--use-cached-nets', action='store_true', help=(
+        'skip training and used the network performance'
+        + ' cached from a previous run'))
+
+args = parser.parse_args()
+
+################################################################################
+# Load data.
+################################################################################
+
+dataset = Dataset(args.data_path)
+x0_shape = dataset.x0_shape
+y_shape = dataset.y_shape
+n_cls = y_shape[0]
+
+################################################################################
+# Train a statically-routed network.
+################################################################################
+
+sr_net = Net(x0_shape, y_shape,
+    ReConvMP(32, 2, 5, 0, 0,
+        ReConvMP(64, 2, 5, 0, 0,
+            ReConvMP(128, 2, 5, 0, 0, LogReg(n_cls, 0)))))
+
+sr_desc = train(sr_net, dataset, 'Static Routing')
+
+################################################################################
+# Train dynamically-routed networks.
+################################################################################
+
+k_cpts = [0]
+ϵ = 0.1
+
+dr_desc = []
+
+for k_cpt in k_cpts:
+    net = Net(x0_shape, y_shape, DSRouting(ϵ, LogReg(n_cls, 0),
+        ReConvMP(32, 2, 5, k_cpt, 0, DSRouting(ϵ, LogReg(n_cls, 0),
+            ReConvMP(64, 2, 5, k_cpt, 0, DSRouting(ϵ, LogReg(n_cls, 0),
+                ReConvMP(128, 2, 5, k_cpt, 0, LogReg(n_cls, 0))))))))
+    desc = train(net, dataset, 'Dynamic Routing (k_cpt=%e)' % k_cpt)
+    dr_desc.append({'k_cpt': k_cpt, 'net': desc})
+
+################################################################################
+# Generate figures.
+################################################################################
+
+# To-do: plot accuracy vs. n_ops and cross-entropy vs. n_ops
