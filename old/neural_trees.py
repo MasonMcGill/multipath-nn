@@ -2,8 +2,8 @@ import itertools
 import os
 
 os.environ['THEANO_FLAGS'] = (
-    'device=cpu,floatX=float32,cast_policy=numpy+floatX,' +
-    'enable_initial_driver_test=False,warn_float64=raise,optimizer=None')
+    'device=gpu,floatX=float32,cast_policy=numpy+floatX,' +
+    'enable_initial_driver_test=False,warn_float64=raise')
 
 import numpy as np
 import numpy.random as rand
@@ -39,16 +39,14 @@ class ConvTF:
 
     def link(self, n_in, x, k_cpt, k_l2):
         self.w = th.shared(np.float32(self.w_scale * rand.randn(*self.w_shape)))
-        self.b = (
-            th.shared(np.float32(self.w_scale * np.zeros(self.w_shape[0])))
-                .dimshuffle('x', 0, 'x', 'x'))
+        self.b = th.shared(np.float32(self.w_scale * np.zeros(self.w_shape[0])))
         self.n_ops = self.w.size.eval() * np.prod(self.in_shape)
         self.n_out = (
             self.w_shape[0] *
             (self.in_shape[1] - self.w_shape[2] + 1) *
             (self.in_shape[2] - self.w_shape[3] + 1))
         x_img = ts.reshape(x, (x.shape[0],) + self.in_shape, 4)
-        s_img = nn.conv2d(x_img, self.w) + self.b
+        s_img = nn.conv2d(x_img, self.w) + self.b.dimshuffle('x', 0, 'x', 'x')
         s_vec = ts.reshape(s_img, (x.shape[0], self.n_out), 2)
         self.x = nn.relu(s_vec)
         self.c_cpt = k_cpt * ts.cast(self.n_ops, 'float32')

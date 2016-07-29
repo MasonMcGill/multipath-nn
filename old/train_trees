@@ -6,23 +6,17 @@ import numpy.random as rand
 import pprintpp as pp
 import scipy.io as io
 
-from neural_trees_v3 import *
+from neural_trees import *
 
 ################################################################################
 # Data Loading
 ################################################################################
 
-mnist = io.loadmat('mnist.mat')
-
-x_tr = np.vstack([mnist['train%i' % i].T for i in range(10)])
-x_ts = np.vstack([mnist['test%i' % i].T for i in range(10)])
-
-y_tr = np.int32(np.vstack([
-    i * np.ones((mnist['train%i' % i].shape[1], 1))
-    for i in range(10)]))
-y_ts = np.int32(np.vstack([
-    i * np.ones((mnist['test%i' % i].shape[1], 1))
-    for i in range(10)]))
+mnist = io.loadmat('../data/mnist.mat')
+x_tr = np.reshape(mnist['x0_tr'], (-1, 784))
+x_ts = np.reshape(mnist['x0_ts'], (-1, 784))
+y_tr = np.int32(np.argmax(mnist['y_tr'], 1)[:, None])
+y_ts = np.int32(np.argmax(mnist['y_ts'], 1)[:, None])
 
 ################################################################################
 # Logging
