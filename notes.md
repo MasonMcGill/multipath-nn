@@ -6,11 +6,13 @@
 
 # Experiments
 
-- Pretraining vs. no pretraining
-- Static routing vs. dynamic routing
-- Static regularization vs. dynamic regularization
-- Regularization in c_tr vs. regularization in c_ev
-- Decision smoothing vs. cost regression
-- Smart routing vs. dumb routing
-- Trees vs. cascades
-- Growing vs. planting
+- Pretraining vs. no pretraining (test informally)
+- Static routing vs. dynamic routing (experiment 1)
+- Static regularization vs. dynamic regularization (test informally)
+- Regularization in c_tr vs. regularization in c_ev (test informally)
+- Decision smoothing vs. cost regression (experiment 2)
+- Trees vs. cascades (experiment 3)
+- Smart routing vs. dumb routing (experiment 4)
+- Growing vs. planting (experiment 5)
+- Subsignal routing (experiment 6)
+- Spiking (experiment 7)

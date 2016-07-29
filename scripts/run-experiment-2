@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
 '''
-Compare the accuracy and efficiency of statically-routed networks and
-dynamically-routed networks (trained via decision smoothing).
+Compare the accuracy and efficiency of decision smoothing and cost regression
+networks.
 '''
 from json import dumps
 from os import makedirs
 
 from lib.data import Dataset
-from lib.nets import DSRouting, LogReg, Net, ReConvMP
+from lib.nets import CRRouting, DSRouting, LogReg, Net, ReConvMP
 from lib.training import train
 
 ################################################################################
 # Load data.
 ################################################################################
 
-dataset = Dataset('data/mnist.mat')
+dataset = Dataset('data/cifar-10.mat')
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
 n_cls = y_shape[0]
 
 ################################################################################
+# Define network hyperparameters.
+################################################################################
+
+k_cpts = [0] + [2**i * 1e-10 for i in range(15)]
+k_cre = 0.1
+ϵ = 0.1
+
+################################################################################
 # Allocate a log for the experiment results.
 ################################################################################
 
-log = {'sr': None, 'dr': []}
+log = {'sr': None, 'ds': [], 'cr': []}
 
 ################################################################################
 # Train a statically-routed network.
@@ -38,13 +46,10 @@ sr_net = Net(x0_shape, y_shape,
 log['sr'] = train(sr_net, dataset, 'Static Routing', n_epochs=10)
 
 ################################################################################
-# Train dynamically-routed networks.
+# Train decision smoothing networks.
 ################################################################################
 
-k_cpts = [0] + [2**i * 1e-10 for i in range(15)]
-ϵ = 0.1
-
-print('\n —— Training dynamically-routed networks... ——\n')
+print('\n —— Training decision smoothing networks... ——\n')
 
 for k_cpt in k_cpts:
     net = Net(x0_shape, y_shape, DSRouting(ϵ, LogReg(n_cls, 0),
@@ -53,14 +58,29 @@ for k_cpt in k_cpts:
                 ReConvMP(128, 2, 5, k_cpt, 0, LogReg(n_cls, 0))))))))
     name = 'Dynamic Routing (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, name, n_epochs=10)
-    log['dr'].append({'k_cpt': k_cpt, 'net': desc})
+    log['ds'].append({'k_cpt': k_cpt, 'net': desc})
+
+################################################################################
+# Train cost regressing networks.
+################################################################################
+
+print('\n —— Training cost regression networks... ——\n')
+
+for k_cpt in k_cpts:
+    net = Net(x0_shape, y_shape, CRRouting(k_cre, ϵ, LogReg(n_cls, 0),
+        ReConvMP(32, 2, 5, k_cpt, 0, CRRouting(k_cre, ϵ, LogReg(n_cls, 0),
+            ReConvMP(64, 2, 5, k_cpt, 0, CRRouting(k_cre, ϵ, LogReg(n_cls, 0),
+                ReConvMP(128, 2, 5, k_cpt, 0, LogReg(n_cls, 0))))))))
+    name = 'Dynamic Routing (k_cpt=%.1e)' % k_cpt
+    desc = train(net, dataset, name, n_epochs=10)
+    log['cr'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
 # Save the results.
 ################################################################################
 
 makedirs('nets/', exist_ok=True)
-with open('nets/experiment-1.json', 'w') as f:
+with open('nets/experiment-2.json', 'w') as f:
     f.write(dumps(log, sort_keys=True, indent=2, separators=(',', ': ')))
 
-print('\n —— Saved the results as `nets/experiment-1.json`. ——\n')
+print('\n —— Saved the results as `nets/experiment-2.json`. ——\n')

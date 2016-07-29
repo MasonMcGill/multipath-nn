@@ -166,9 +166,9 @@ class LogReg:
         self.x = tf.nn.softmax(tf.matmul(x_flat, self.w) + self.b)
 
     def link_backward(self, y):
-        # p_cls = self.ϵ / self.n_classes + (1 - self.ϵ) * self.x
-        # ℓ_err = -tf.reduce_sum(y * tf.log(p_cls), 1)
-        ℓ_err = tf.reduce_sum(tf.square(self.x - y), 1)
+        p_cls = self.ϵ / self.n_classes + (1 - self.ϵ) * self.x
+        ℓ_err = -tf.reduce_sum(y * tf.log(p_cls), 1)
+        # ℓ_err = tf.reduce_sum(tf.square(self.x - y), 1)
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
         self.ℓℓ_tr = ℓ_err + ℓ_l2
         self.ℓℓ_ev = ℓ_err
