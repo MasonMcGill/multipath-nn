@@ -99,7 +99,7 @@ class ReConv:
         v = np.linspace(-2, 2, self.supp)[:, None, None]
         w_env = np.exp(-(u**2 - v**2) / 2) / np.sum(np.exp(-(u**2 - v**2) / 2))
         n_chan_in = x.get_shape()[3].value
-        w_scale = w_env * np.sqrt(self.supp**2 / n_chan_in)
+        w_scale = 2 * w_env * np.sqrt(self.supp**2 / n_chan_in)
         w_shape = (self.supp, self.supp, n_chan_in, self.n_chan)
         steps = (1, self.step, self.step, 1)
         self.w = tf.Variable(w_scale * tf.random_normal(w_shape))
@@ -128,7 +128,7 @@ class ReConvMP:
         v = np.linspace(-2, 2, self.supp)[:, None, None]
         w_env = np.exp(-(u**2 - v**2) / 2) / np.sum(np.exp(-(u**2 - v**2) / 2))
         n_chan_in = x.get_shape()[3].value
-        w_scale = w_env * np.sqrt(self.supp**2 / n_chan_in)
+        w_scale = 2 * w_env * np.sqrt(self.supp**2 / n_chan_in)
         w_shape = (self.supp, self.supp, n_chan_in, self.n_chan)
         self.w = tf.Variable(w_scale * tf.random_normal(w_shape))
         self.b = tf.Variable(tf.zeros(self.n_chan))
