@@ -10,20 +10,19 @@ def batches(x0, y, n):
         yield x0_shuf[i:i+n], y_shuf[i:i+n]
 
 class Dataset:
-    def __init__(self, path):
+    def __init__(self, path, normalize=True, ϵ=1e-3):
         archive = io.loadmat(path)
         self.x0_tr = archive['x0_tr']
         self.x0_ts = archive['x0_ts']
         self.y_tr = archive['y_tr']
         self.y_ts = archive['y_ts']
-
-        ϵ = 1e-3
-        self.x0_tr = (
-            (self.x0_tr - np.mean(self.x0_tr, (1, 2, 3), keepdims=True))
-            / (np.std(self.x0_tr, (1, 2, 3), keepdims=True) + ϵ))
-        self.x0_ts = (
-            (self.x0_ts - np.mean(self.x0_ts, (1, 2, 3), keepdims=True))
-            / (np.std(self.x0_ts, (1, 2, 3), keepdims=True) + ϵ))
+        if normalize:
+            self.x0_tr = (
+                (self.x0_tr - np.mean(self.x0_tr, (1, 2, 3), keepdims=True))
+                / (np.std(self.x0_tr, (1, 2, 3), keepdims=True) + ϵ))
+            self.x0_ts = (
+                (self.x0_ts - np.mean(self.x0_ts, (1, 2, 3), keepdims=True))
+                / (np.std(self.x0_ts, (1, 2, 3), keepdims=True) + ϵ))
 
     @property
     def x0_shape(self):
