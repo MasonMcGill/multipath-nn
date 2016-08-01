@@ -72,29 +72,49 @@ def net_desc(sess, net, dataset):
 # Descriptor Rendering
 ################################################################################
 
-def render_layer_desc(desc):
-    annotation = (
-        '[{:.1%} ✓ {:.1%} ×]'.format(desc['p_cor_ts'], desc['p_inc_ts'])
-        if len(desc['sinks']) == 0 else '')
+def render_layer_desc(desc, annotate=(lambda d: '')):
     sink_text = ''.join(
-        '\n↳ ' + render_layer_desc(s).replace(
+        '\n↳ ' + render_layer_desc(s, annotate).replace(
             '\n', '\n| ' if i < len(desc['sinks']) - 1 else '\n  ')
         for i, s in enumerate(desc['sinks']))
-    return '%s %s%s' % (desc['type'], annotation, sink_text)
+    return '%s %s%s' % (desc['type'], annotate(desc), sink_text)
 
 def render_net_desc(desc, name='Network'):
+    layer_text_tr = render_layer_desc(desc['root'], lambda d: (
+        '[{:.1%} ✓ {:.1%} ×]'.format(d['p_cor_tr'], d['p_inc_tr'])
+        if len(d['sinks']) == 0 else ''))
+    layer_text_ts = render_layer_desc(desc['root'], lambda d: (
+        '[{:.1%} ✓ {:.1%} ×]'.format(d['p_cor_ts'], d['p_inc_ts'])
+        if len(d['sinks']) == 0 else ''))
     return (
         '····························································\n'
         ' {}\n'
         '····························································\n'
         '⋮\n'
-        '⋮   {}\n'
+        '⋮   Training set performance:\n'
         '⋮\n'
-        '⋮   Total accuracy: {:.2%}\n'
-        '⋮   Mean cross-entropy: {:.2e}\n'
-        '⋮   Mean squared error: {:.2e}\n'
-        '⋮   Mean op count: {:.2e}\n'
+        '⋮     {}\n'
+        '⋮\n'
+        '⋮     Accuracy: {:.2%}\n'
+        '⋮     Mean cross-entropy: {:.2e}\n'
+        '⋮     Mean squared error: {:.2e}\n'
+        '⋮     Mean op count: {:.2e}\n'
+        '⋮\n'
+        '⋮ ···\n'
+        '⋮\n'
+        '⋮   Test set performance:\n'
+        '⋮\n'
+        '⋮     {}\n'
+        '⋮\n'
+        '⋮     Accuracy: {:.2%}\n'
+        '⋮     Mean cross-entropy: {:.2e}\n'
+        '⋮     Mean squared error: {:.2e}\n'
+        '⋮     Mean op count: {:.2e}\n'
         '⋮'
-    ).format(
-        name, render_layer_desc(desc['root']).replace('\n', '\n⋮   '),
-        desc['acc_ts'], desc['mxe_ts'], desc['mse_ts'], desc['moc_ts'])
+    ).format(name,
+        layer_text_tr.replace('\n', '\n⋮     '),
+        desc['acc_tr'], desc['mxe_tr'],
+        desc['mse_tr'], desc['moc_tr'],
+        layer_text_ts.replace('\n', '\n⋮     '),
+        desc['acc_ts'], desc['mxe_ts'],
+        desc['mse_ts'], desc['moc_ts'])
