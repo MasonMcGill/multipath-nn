@@ -60,13 +60,25 @@ class Net:
         return (ℓ for ℓ in self.layers if len(ℓ.sinks) == 0)
 
 ################################################################################
+# Regularization Functions
+################################################################################
+
+def drop(x, mode, λ):
+    if λ == 1:
+        return x
+    else:
+        mask = tf.less(tf.random_uniform(tf.shape(x)), λ)
+        return tf.cond(tf.equal(mode, 'tr'),
+            lambda: tf.to_float(mask) * x / λ,
+            lambda: x)
+
+################################################################################
 # Regression Layers
 ################################################################################
 
 class LogReg:
-    def __init__(self, n_classes, k_l2, ϵ=1e-6):
+    def __init__(self, n_classes, ϵ=1e-6):
         self.n_classes = n_classes
-        self.k_l2 = k_l2
         self.ϵ = ϵ
         self.sinks = []
 
@@ -82,9 +94,7 @@ class LogReg:
     def link_backward(self, y):
         p_cls = self.ϵ / self.n_classes + (1 - self.ϵ) * self.x
         ℓ_err = -tf.reduce_sum(y * tf.log(p_cls), 1)
-        # ℓ_err = tf.reduce_sum(tf.square(self.x - y), 1)
-        ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
-        self.ℓℓ_tr = ℓ_err + ℓ_l2
+        self.ℓℓ_tr = ℓ_err
         self.ℓℓ_ev = ℓ_err
 
 ################################################################################
@@ -92,10 +102,10 @@ class LogReg:
 ################################################################################
 
 class ReLin:
-    def __init__(self, n_chan, k_cpt, k_l2, sink):
+    def __init__(self, n_chan, k_cpt, λ, sink):
         self.n_chan = n_chan
         self.k_cpt = k_cpt
-        self.k_l2 = k_l2
+        self.λ = λ
         self.sinks = [sink]
 
     def link_forward(self, x, mode):
@@ -105,22 +115,22 @@ class ReLin:
         w_scale = 1 / np.sqrt(n_chan_in)
         self.w = tf.Variable(w_scale * tf.random_normal(w_shape))
         self.b = tf.Variable(tf.zeros(self.n_chan))
-        self.x = tf.nn.relu(tf.matmul(x_flat, self.w) + self.b)
+        s = tf.matmul(x_flat, self.w) + self.b
+        self.x = drop(tf.nn.relu(s), mode, self.λ)
         self.n_ops = np.prod(self.w.get_shape().as_list())
 
     def link_backward(self, y):
         ℓ_cpt = self.k_cpt * self.n_ops
-        ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
-        self.ℓℓ_tr = ℓ_cpt + ℓ_l2
+        self.ℓℓ_tr = ℓ_cpt
         self.ℓℓ_ev = ℓ_cpt
 
 class ReConv:
-    def __init__(self, n_chan, step, supp, k_cpt, k_l2, sink):
+    def __init__(self, n_chan, step, supp, k_cpt, λ, sink):
         self.n_chan = n_chan
         self.step = step
         self.supp = supp
         self.k_cpt = k_cpt
-        self.k_l2 = k_l2
+        self.λ = λ
         self.sinks = [sink]
 
     def link_forward(self, x, mode):
@@ -133,23 +143,23 @@ class ReConv:
         steps = (1, self.step, self.step, 1)
         self.w = tf.Variable(w_scale * tf.random_normal(w_shape))
         self.b = tf.Variable(tf.zeros(self.n_chan))
-        self.x = tf.nn.relu(tf.nn.conv2d(x, self.w, steps, 'SAME') + self.b)
+        s = tf.nn.conv2d(x, self.w, steps, 'SAME') + self.b
+        self.x = drop(tf.nn.relu(s), mode, self.λ)
         n_px = np.prod(self.x.get_shape().as_list()[1:3])
         self.n_ops = np.prod(self.w.get_shape().as_list()) * n_px / self.step**2
 
     def link_backward(self, y):
         ℓ_cpt = self.k_cpt * self.n_ops
-        ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
-        self.ℓℓ_tr = ℓ_cpt + ℓ_l2
+        self.ℓℓ_tr = ℓ_cpt
         self.ℓℓ_ev = ℓ_cpt
 
 class ReConvMP:
-    def __init__(self, n_chan, step, supp, k_cpt, k_l2, sink):
+    def __init__(self, n_chan, step, supp, k_cpt, λ, sink):
         self.n_chan = n_chan
         self.step = step
         self.supp = supp
         self.k_cpt = k_cpt
-        self.k_l2 = k_l2
+        self.λ = λ
         self.sinks = [sink]
 
     def link_forward(self, x, mode):
@@ -161,36 +171,21 @@ class ReConvMP:
         w_shape = (self.supp, self.supp, n_chan_in, self.n_chan)
         self.w = tf.Variable(w_scale * tf.random_normal(w_shape))
         self.b = tf.Variable(tf.zeros(self.n_chan))
-        self.x = tf.nn.max_pool(
-            tf.nn.relu(tf.nn.conv2d(x, self.w, (1, 1, 1, 1), 'SAME') + self.b),
-            (1, self.step, self.step, 1), (1, self.step, self.step, 1),
-            'SAME')
+        s = tf.nn.conv2d(x, self.w, (1, 1, 1, 1), 'SAME') + self.b
+        self.x = drop(
+            tf.nn.max_pool(
+                tf.nn.relu(s),
+                (1, self.step, self.step, 1),
+                (1, self.step, self.step, 1),
+                'SAME'),
+            mode, self.λ)
         n_px = np.prod(self.x.get_shape().as_list()[1:3])
         self.n_ops = np.prod(self.w.get_shape().as_list()) * n_px
 
     def link_backward(self, y):
         ℓ_cpt = self.k_cpt * self.n_ops
-        ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
-        self.ℓℓ_tr = ℓ_cpt + ℓ_l2
+        self.ℓℓ_tr = ℓ_cpt
         self.ℓℓ_ev = ℓ_cpt
-
-################################################################################
-# Regularization Layers
-################################################################################
-
-class Dropout:
-    def __init__(self, sink):
-        self.sinks = [sink]
-        self.p = 0.25
-
-    def link_forward(self, x, mode):
-        mask = tf.greater(tf.random_uniform(tf.shape(x)), self.p)
-        self.x = tf.cond(tf.equal(mode, 'tr'),
-            lambda: tf.to_float(mask) * x / (1 - self.p),
-            lambda: x)
-
-    def link_backward(self, y):
-        pass
 
 ################################################################################
 # Routing Layers

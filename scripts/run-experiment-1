@@ -32,9 +32,9 @@ log = {'sr': None, 'dr': []}
 print('\n —— Training a statically-routed network... ——\n')
 
 sr_net = Net(x0_shape, y_shape,
-    ReConvMP(32, 2, 5, 0, 0,
-        ReConvMP(64, 2, 5, 0, 0,
-            ReConvMP(128, 2, 5, 0, 0, LogReg(n_cls, 0)))))
+    ReConvMP(32, 2, 5, 0, 1,
+        ReConvMP(64, 2, 5, 0, 1,
+            ReConvMP(128, 2, 5, 0, 1, LogReg(n_cls)))))
 log['sr'] = train(sr_net, dataset, 'Static Routing', n_epochs=10)
 
 ################################################################################
@@ -47,10 +47,10 @@ k_cpts = [0] + [2**i * 1e-10 for i in range(15)]
 print('\n —— Training dynamically-routed networks... ——\n')
 
 for k_cpt in k_cpts:
-    net = Net(x0_shape, y_shape, DSRouting(ϵ, LogReg(n_cls, 0),
-        ReConvMP(32, 2, 5, k_cpt, 0, DSRouting(ϵ, LogReg(n_cls, 0),
-            ReConvMP(64, 2, 5, k_cpt, 0, DSRouting(ϵ, LogReg(n_cls, 0),
-                ReConvMP(128, 2, 5, k_cpt, 0, LogReg(n_cls, 0))))))))
+    net = Net(x0_shape, y_shape, DSRouting(ϵ, LogReg(n_cls),
+        ReConvMP(32, 2, 5, k_cpt, 1, DSRouting(ϵ, LogReg(n_cls),
+            ReConvMP(64, 2, 5, k_cpt, 1, DSRouting(ϵ, LogReg(n_cls),
+                ReConvMP(128, 2, 5, k_cpt, 1, LogReg(n_cls))))))))
     name = 'Dynamic Routing (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, name, n_epochs=10)
     log['dr'].append({'k_cpt': k_cpt, 'net': desc})
