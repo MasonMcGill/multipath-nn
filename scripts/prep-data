@@ -63,7 +63,7 @@ urlretrieve(cifar_url, join(cifar_path, '_cifar.tar.gz'), log_cifar_progress)
 print(80 * '\b \b' + 'Downloading CIFAR-10 — done!')
 
 ################################################################################
-# Reformat CIFAR-10.
+# Reformat and Gamma-Decode CIFAR-10.
 ################################################################################
 
 print('Reformatting CIFAR-10...', end='', flush=True)
@@ -77,13 +77,13 @@ cifar_a_ts = [
 cifar_b = {
     'x0_tr': np.vstack([
         np.float32(np.transpose(
-            np.reshape(batch['data'], (-1, 3, 32, 32)),
-            (0, 2, 3, 1)) / 255)
+            np.reshape(batch['data']**2.2, (-1, 3, 32, 32)),
+            (0, 2, 3, 1)) / 255**2.2)
         for batch in cifar_a_tr]),
     'x0_ts': np.vstack([
         np.float32(np.transpose(
-            np.reshape(batch['data'], (-1, 3, 32, 32)),
-            (0, 2, 3, 1)) / 255)
+            np.reshape(batch['data']**2.2, (-1, 3, 32, 32)),
+            (0, 2, 3, 1)) / 255**2.2)
         for batch in cifar_a_ts]),
     'y_tr': np.vstack([
         np.float32(batch['labels'] == np.arange(10))
