@@ -16,7 +16,7 @@ def train(net, dataset, name='Network', batch_size=64,
                 desc = net_desc(sess, net, dataset)
                 print(render_net_desc(desc, '%s — Epoch %i' % (name, t)))
             for x0, y in dataset.training_batches(batch_size):
-                train_op.run({net.x0: x0, net.y: y})
+                train_op.run({net.x0: x0, net.y: y, net.mode: 'tr'})
         desc = net_desc(sess, net, dataset)
     print(render_net_desc(desc, '%s — Epoch %i' % (name, n_epochs)))
     return desc
