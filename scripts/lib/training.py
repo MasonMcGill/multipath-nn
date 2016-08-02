@@ -13,7 +13,7 @@ def train(net, dataset, name='Network', batch_size=64,
         sess.run(tf.initialize_all_variables())
         for t in range(n_epochs):
             for x0, y in dataset.training_batches(batch_size):
-                train_op.run({net.x0: x0, net.y: y, net.mode: 'tr'})
+                train_op.run({net.x0: x0, net.y: y})
             if (t + 1) % logging_period == 0:
                 desc = net_desc(sess, net, dataset)
                 print(render_net_desc(desc, '%s — Epoch %i' % (name, t + 1)))

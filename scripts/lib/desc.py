@@ -8,20 +8,20 @@ __all__ = ['net_desc', 'render_net_desc']
 ################################################################################
 
 def p_cor(net, ℓ):
-    δ_cor = tf.equal(tf.argmax(ℓ.x, 1), tf.argmax(net.y, 1))
+    δ_cor = tf.equal(tf.argmax(ℓ.x_ev, 1), tf.argmax(net.y, 1))
     return ℓ.p_ev * tf.to_float(δ_cor)
 
 def p_inc(net, ℓ):
-    δ_inc = tf.not_equal(tf.argmax(ℓ.x, 1), tf.argmax(net.y, 1))
+    δ_inc = tf.not_equal(tf.argmax(ℓ.x_ev, 1), tf.argmax(net.y, 1))
     return ℓ.p_ev * tf.to_float(δ_inc)
 
 def x_ent(net, ℓ, ϵ=1e-6):
     n_cls = net.y.get_shape()[1].value
-    p_cls = ϵ / n_cls + (1 - ϵ) * ℓ.x
+    p_cls = ϵ / n_cls + (1 - ϵ) * ℓ.x_ev
     return ℓ.p_ev * -tf.reduce_sum(net.y * tf.log(p_cls), 1)
 
 def mse(net, ℓ):
-    return ℓ.p_ev * tf.reduce_sum(tf.square(ℓ.x - net.y), 1)
+    return ℓ.p_ev * tf.reduce_sum(tf.square(ℓ.x_ev - net.y), 1)
 
 def moc(net, ℓ):
     return ℓ.p_ev * ℓ.n_ops
@@ -90,10 +90,10 @@ def render_net_desc(desc, name='Network'):
         '⋮\n'
         '⋮   {}\n'
         '⋮\n'
-        '⋮   Accuracy (training): {:.2%}\n'
-        '⋮   Accuracy (test): {:.2%}\n'
-        '⋮   Mean op count (training): {:.2e}\n'
-        '⋮   Mean op count (test): {:.2e}\n'
+        '⋮   Accuracy (training set): {:.2%}\n'
+        '⋮   Accuracy (test set): {:.2%}\n'
+        '⋮   Mean op count (training set): {:.2e}\n'
+        '⋮   Mean op count (test set): {:.2e}\n'
         '⋮'
     ).format(
         name, layer_text.replace('\n', '\n⋮   '),
