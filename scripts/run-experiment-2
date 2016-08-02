@@ -32,25 +32,24 @@ k_cre = 0.1
 # Allocate a log for the experiment results.
 ################################################################################
 
-log = {'sr': None, 'ds': [], 'cr': []}
+log = {'sr': [], 'ds': [], 'cr': []}
 
 ################################################################################
 # Train a statically-routed network.
 ################################################################################
 
-print('\n —— Training a statically-routed network... ——\n')
+print('\n —— Training statically-routed networks... ——\n')
 
-sr_net = Net(x0_shape, y_shape,
-    ReConv(64, 1, 3, 0, λ,
-    ReConvMP(64, 2, 3, 0, λ,
-        ReConv(128, 1, 3, 0, λ,
-        ReConvMP(128, 2, 3, 0, λ,
-            ReConv(256, 1, 3, 0, λ,
-            ReConvMP(256, 2, 3, 0, λ,
-                LogReg(n_cls))))))))
-
-log['sr'] = train(sr_net, dataset, 'Static Routing',
-                  n_epochs=100, logging_period=5)
+for n_tf in range(7):
+    root = LogReg(n_cls)
+    for i in reversed(range(n_tf)):
+        n_chan = 2**(i // 2) * 64
+        root = (ReConv(n_chan, 1, 3, 0, λ, root) if x % 2 == 0 else
+                ReConvMP(n_chan, 2, 3, 0, λ, root))
+    net = Net(x0_shape, y_shape, root)
+    name = 'Static Routing (n_tf=%i)' % n_tf
+    desc = train(net, dataset, name, n_epochs=10)
+    log['sr'].append({'n_tf': n_tf, 'net': desc})
 
 exit()
 
