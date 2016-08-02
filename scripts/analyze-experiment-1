@@ -27,20 +27,22 @@ makedirs('figures/experiment-1/', exist_ok=True)
 
 sr_acc = [log['sr']['acc_ts']]
 sr_moc = [log['sr']['moc_ts']]
-dr_acc = [entry['net']['acc_ts'] for entry in log['dr']]
-dr_moc = [entry['net']['moc_ts'] for entry in log['dr']]
+ds_acc = [entry['net']['acc_ts'] for entry in log['ds']]
+ds_moc = [entry['net']['moc_ts'] for entry in log['ds']]
+cr_acc = [entry['net']['acc_ts'] for entry in log['cr']]
+cr_moc = [entry['net']['moc_ts'] for entry in log['cr']]
 
 plt.rc('text', usetex=True)
 plt.figure(figsize=(4, 3))
 sbn.set_style('ticks')
 plt.xlabel('Mean Op Count')
-plt.xlim([0, 6.2e6])
-plt.xticks([0, 2e6, 4e6, 6e6])
 plt.ticklabel_format(axis='x', style='sci', scilimits=(0, 0))
 plt.ylabel('Accuracy')
-plt.ylim([0.9, 1])
 plt.scatter(sr_moc, sr_acc, color='r', label='Static routing')
-plt.scatter(dr_moc, dr_acc, label='Dynamic routing')
+plt.scatter(ds_moc, ds_acc, color='g',
+            label='Dynamic routing -- decision smoothing')
+plt.scatter(cr_moc, cr_acc, color='b',
+            label='Dynamic routing -- cost regression')
 plt.legend(loc='lower right', fontsize=8)
 sbn.despine()
 plt.tight_layout()
