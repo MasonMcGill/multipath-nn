@@ -44,7 +44,7 @@ for n_tf in range(7):
     root = LogReg(n_cls)
     for i in reversed(range(n_tf)):
         n_chan = 2**(i // 2) * 64
-        root = (ReConv(n_chan, 1, 3, 0, λ, root) if x % 2 == 0 else
+        root = (ReConv(n_chan, 1, 3, 0, λ, root) if i % 2 == 0 else
                 ReConvMP(n_chan, 2, 3, 0, λ, root))
     net = Net(x0_shape, y_shape, root)
     name = 'Static Routing (n_tf=%i)' % n_tf
