@@ -7,7 +7,7 @@ from json import dumps
 from os import makedirs
 
 from lib.data import Dataset
-from lib.nets import CRRouting, DSRouting, LogReg, Net, ReConv, ReConvMP
+from lib.nets import CRRouting, DSRouting, LogReg, Net, ReConv, ReConvMP, ReLin
 from lib.training import train
 
 ################################################################################
@@ -24,12 +24,12 @@ n_cls = y_shape[0]
 ################################################################################
 
 k_cpts = [0] + [4**i * 1e-10 for i in range(7)]
-k_cre = 0.1
-λ = 0.8
+k_cre = 1e-3
+λ = 0.75
 ϵ = 0.5
 
 batch_size = 64
-n_epochs = 50
+n_epochs = 100
 
 ################################################################################
 # Allocate a log for the experiment results.
@@ -43,8 +43,9 @@ log = {'sr': [], 'ds': [], 'cr': []}
 
 print('\n —— Training statically-routed networks... ——\n')
 
-for n_tf in range(7):
-    root = LogReg(n_cls)
+for n_tf in range(8, 9):
+# for n_tf in range(7):
+    root = ReLin(512, 0, 0.5, LogReg(n_cls))
     for i in reversed(range(n_tf)):
         n_chan = 2**(i // 2) * 64
         root = (ReConv(n_chan, 1, 3, 0, λ, root) if i % 2 == 0 else
@@ -64,12 +65,12 @@ print('\n —— Training decision smoothing networks... ——\n')
 
 for k_cpt in k_cpts:
     net = Net(x0_shape, y_shape, DSRouting(ϵ, LogReg(n_cls),
-        ReConv(32, 1, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
-        ReConvMP(32, 2, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
-            ReConv(64, 1, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
-            ReConvMP(64, 2, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
-                ReConv(128, 1, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
-                ReConvMP(128, 2, 3, k_cpt, λ, LogReg(n_cls))))))))))))))
+        ReConv(64, 1, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
+        ReConvMP(64, 2, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
+            ReConv(128, 1, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
+            ReConvMP(128, 2, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
+                ReConv(256, 1, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
+                ReConvMP(256, 2, 3, k_cpt, λ, LogReg(n_cls))))))))))))))
     name = 'Decision Smoothing (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, name, batch_size, n_epochs)
     log['ds'].append({'k_cpt': k_cpt, 'net': desc})
@@ -82,12 +83,12 @@ print('\n —— Training cost regression networks... ——\n')
 
 for k_cpt in k_cpts:
     net = Net(x0_shape, y_shape, CRRouting(k_cre, ϵ, LogReg(n_cls),
-        ReConv(32, 1, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
-        ReConvMP(32, 2, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
-            ReConv(64, 1, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
-            ReConvMP(64, 2, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
-                ReConv(128, 1, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
-                ReConvMP(128, 2, 3, k_cpt, λ, LogReg(n_cls))))))))))))))
+        ReConv(64, 1, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
+        ReConvMP(64, 2, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
+            ReConv(128, 1, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
+            ReConvMP(128, 2, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
+                ReConv(256, 1, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
+                ReConvMP(256, 2, 3, k_cpt, λ, LogReg(n_cls))))))))))))))
     name = 'Cost Regression (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, name, batch_size, n_epochs)
     log['cr'].append({'k_cpt': k_cpt, 'net': desc})

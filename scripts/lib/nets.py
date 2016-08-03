@@ -1,3 +1,5 @@
+from functools import reduce
+
 import numpy as np
 import tensorflow as tf
 
@@ -42,6 +44,10 @@ class Net:
                 layer.ℓℓ_ev
                 + sum(layer.π_ev[:, i] * s.ℓ_ev
                       for i, s in enumerate(layer.sinks)))
+            layer.ℓ_opt = (
+                layer.ℓℓ_ev + (
+                    reduce(tf.minimum, (s.ℓ_opt for s in layer.sinks))
+                    if len(layer.sinks) > 0 else 0))
         link(root, self.x0, self.x0)
         self.root = root
         self.ℓ_tr = root.ℓ_tr
@@ -66,6 +72,23 @@ class Net:
 def drop(x, λ):
     mask = tf.less(tf.random_uniform(tf.shape(x)), λ)
     return x if λ == 1 else tf.to_float(mask) * x / λ
+
+# def batch_norm(x, mode, d=0.99, ϵ=1e-6):
+#     n_chan = x.get_shape()[3].value
+#     m_batch, v_batch = tf.nn.moments(x, (0, 1, 2))
+#     m_avg = tf.Variable(tf.zeros(n_chan), trainable=False)
+#     v_avg = tf.Variable(tf.ones(n_chan), trainable=False)
+#     m_assign = tf.assign(m_avg, self.d * m_avg + (1 - self.d) * m_batch)
+#     v_assign = tf.assign(v_avg, self.d * v_avg + (1 - self.d) * v_batch)
+#     with tf.control_dependencies([m_assign, v_assign]):
+#         m_tr = tf.identity(m_batch)
+#         v_tr = tf.identity(v_batch)
+#     m = tf.cond(tf.equal(mode, 'train'), lambda: m_tr, lambda: m_avg)
+#     v = tf.cond(tf.equal(mode, 'train'), lambda: v_tr, lambda: v_avg)
+#     self.γ = tf.Variable(tf.ones(n_chan))
+#     self.β = tf.Variable(tf.zeros(n_chan))
+#     x_tr_norm = self.γ * (x - m) / tf.sqrt(v + self.ϵ) + self.β
+#     return x_tr_norm, x_ts_norm
 
 ################################################################################
 # Regression Layers
@@ -134,15 +157,12 @@ class ReConv:
         self.sinks = [sink]
 
     def link_forward(self, x_tr, x_ev):
-        u = np.linspace(-2, 2, self.supp)[:, None, None, None]
-        v = np.linspace(-2, 2, self.supp)[:, None, None]
-        w_env = np.exp(-(u**2 - v**2) / 2) / np.sum(np.exp(-(u**2 - v**2) / 2))
         n_chan_in = x_tr.get_shape()[3].value
-        w_scale = w_env * np.sqrt(self.supp**2 / n_chan_in)
         w_shape = (self.supp, self.supp, n_chan_in, self.n_chan)
-        steps = (1, self.step, self.step, 1)
+        w_scale = 1 / np.sqrt(self.supp**2 * n_chan_in)
         self.w = tf.Variable(w_scale * tf.random_normal(w_shape))
         self.b = tf.Variable(tf.zeros(self.n_chan))
+        steps = (1, self.step, self.step, 1)
         s_tr = tf.nn.conv2d(x_tr, self.w, steps, 'SAME') + self.b
         s_ev = tf.nn.conv2d(x_ev, self.w, steps, 'SAME') + self.b
         self.x_tr = drop(tf.nn.relu(s_tr), self.λ)
@@ -165,12 +185,9 @@ class ReConvMP:
         self.sinks = [sink]
 
     def link_forward(self, x_tr, x_ev):
-        u = np.linspace(-2, 2, self.supp)[:, None, None, None]
-        v = np.linspace(-2, 2, self.supp)[:, None, None]
-        w_env = np.exp(-(u**2 - v**2) / 2) / np.sum(np.exp(-(u**2 - v**2) / 2))
         n_chan_in = x_tr.get_shape()[3].value
-        w_scale = w_env * np.sqrt(self.supp**2 / n_chan_in) / self.step**2
         w_shape = (self.supp, self.supp, n_chan_in, self.n_chan)
+        w_scale = 1 / np.sqrt(self.supp**2 * n_chan_in)
         self.w = tf.Variable(w_scale * tf.random_normal(w_shape))
         self.b = tf.Variable(tf.zeros(self.n_chan))
         s_tr = tf.nn.conv2d(x_tr, self.w, (1, 1, 1, 1), 'SAME') + self.b
@@ -246,9 +263,21 @@ class CRRouting:
             tf.range(len(self.sinks))))
 
     def link_backward(self, y):
-        self.ℓℓ_tr = self.k_cre * sum(
-            tf.square(self.sinks[i].ℓ_ev - self.ℓ_est_tr[:, i])
-            for i in range(len(self.sinks)))
+        sq_err = sum(
+            self.π_tr[:, i]
+            * tf.square(s.ℓ_opt - self.ℓ_est_tr[:, i])
+            for i, s in enumerate(self.sinks))
+        ℓ_opt = reduce(tf.minimum, (s.ℓ_opt for s in self.sinks))
+        ℓ_π = sum(self.π_ev[:, i] * s.ℓ_opt for i, s in enumerate(self.sinks))
+        ℓ_rout = ℓ_π - ℓ_opt
+        k_cre = tf.stop_gradient(
+            tf.reduce_mean(self.p_tr * ℓ_rout)
+            / tf.reduce_mean(self.p_tr * sq_err))
+        self.ℓℓ_tr = k_cre * sq_err
+
+        # self.ℓℓ_tr = self.k_cre * sum(
+        #     tf.square(self.sinks[i].ℓ_ev - self.ℓ_est_tr[:, i])
+        #     for i in range(len(self.sinks)))
 
 ################################################################################
 # Smart Routing Layers (to-do: clean up)

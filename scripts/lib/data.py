@@ -1,6 +1,11 @@
 import numpy as np
 import numpy.random as rand
 import scipy.io as io
+import scipy.ndimage.filters as flt
+
+################################################################################
+# Support Functions
+################################################################################
 
 def batches(x0, y, n):
     order = rand.permutation(len(x0))
@@ -9,20 +14,32 @@ def batches(x0, y, n):
     for i in range(0, len(x0) - n + 1, n):
         yield x0_shuf[i:i+n], y_shuf[i:i+n]
 
+def scale_by_local_lum(x0, σ, ϵ):
+    return x0 / (
+        flt.gaussian_filter(x0[..., 0], σ) +
+        flt.gaussian_filter(x0[..., 1], σ) +
+        flt.gaussian_filter(x0[..., 2], σ) + ϵ)[..., None]
+
+################################################################################
+# Dataset
+################################################################################
+
 class Dataset:
-    def __init__(self, path, normalize=True, ϵ=1e-3):
+    def __init__(self, path, normalize=True, σ=3, ϵ=1e-2):
         archive = io.loadmat(path)
         self.x0_tr = archive['x0_tr']
         self.x0_ts = archive['x0_ts']
         self.y_tr = archive['y_tr']
         self.y_ts = archive['y_ts']
         if normalize:
-            self.x0_tr = (
-                (self.x0_tr - np.mean(self.x0_tr, (1, 2, 3), keepdims=True))
-                / (np.std(self.x0_tr, (1, 2, 3), keepdims=True) + ϵ))
-            self.x0_ts = (
-                (self.x0_ts - np.mean(self.x0_ts, (1, 2, 3), keepdims=True))
-                / (np.std(self.x0_ts, (1, 2, 3), keepdims=True) + ϵ))
+            self.x0_tr = np.array([
+                scale_by_local_lum(x0, σ, ϵ)
+                for x0 in self.x0_tr])
+            self.x0_ts = np.array([
+                scale_by_local_lum(x0, σ, ϵ)
+                for x0 in self.x0_ts])
+            self.x0_tr -= np.mean(self.x0_tr, (1, 2, 3), keepdims=True)
+            self.x0_ts -= np.mean(self.x0_ts, (1, 2, 3), keepdims=True)
 
     @property
     def x0_shape(self):
