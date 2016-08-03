@@ -43,8 +43,7 @@ log = {'sr': [], 'ds': [], 'cr': []}
 
 print('\n —— Training statically-routed networks... ——\n')
 
-for n_tf in range(8, 9):
-# for n_tf in range(7):
+for n_tf in range(7):
     root = ReLin(512, 0, 0.5, LogReg(n_cls))
     for i in reversed(range(n_tf)):
         n_chan = 2**(i // 2) * 64
@@ -54,8 +53,6 @@ for n_tf in range(8, 9):
     name = 'Static Routing (n_tf=%i)' % n_tf
     desc = train(net, dataset, name, batch_size, n_epochs)
     log['sr'].append({'n_tf': n_tf, 'net': desc})
-
-exit()
 
 ################################################################################
 # Train decision smoothing networks.
