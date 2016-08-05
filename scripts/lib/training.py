@@ -8,7 +8,7 @@ from lib.desc import net_desc, render_net_desc
 
 def train(net, dataset, name='Network', batch_size=64,
           n_epochs=100, logging_period=5):
-    train_op = tf.train.AdamOptimizer(1e-4).minimize(tf.reduce_mean(net.ℓ_tr))
+    train_op = tf.train.AdamOptimizer().minimize(tf.reduce_mean(net.ℓ_tr))
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
         for t in range(n_epochs):
