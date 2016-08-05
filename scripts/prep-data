@@ -7,6 +7,7 @@ from urllib.request import urlretrieve
 
 import numpy as np
 import scipy.io as io
+import scipy.ndimage.filters as flt
 
 ################################################################################
 # Download MNIST.
@@ -95,3 +96,24 @@ cifar_b = {
 makedirs('data/', exist_ok=True)
 io.savemat('data/cifar-10.mat', cifar_b, do_compression=True)
 print(80 * '\b \b' + 'Reformatting CIFAR-10 — done!')
+
+################################################################################
+# Perform Local Luminance Normalization on CIFAR-10.
+################################################################################
+
+def normalize(x0, σ=3, ϵ=1e-3):
+    return x0 / (
+        0.2989 * flt.gaussian_filter(x0[..., 0], σ) +
+        0.5870 * flt.gaussian_filter(x0[..., 1], σ) +
+        0.1140 * flt.gaussian_filter(x0[..., 2], σ) + ϵ)[..., None]
+
+print('Normalizing CIFAR-10...', end='', flush=True)
+
+cifar_b_lln = {
+    'x0_tr': np.array([normalize(x0) for x0 in cifar_b['x0_tr']]),
+    'x0_ts': np.array([normalize(x0) for x0 in cifar_b['x0_ts']]),
+    'y_tr': cifar_b['y_tr'],
+    'y_ts': cifar_b['y_ts']}
+
+io.savemat('data/cifar-10-lln.mat', cifar_b_lln, do_compression=True)
+print(80 * '\b \b' + 'Normalizing CIFAR-10 — done!')
