@@ -242,7 +242,7 @@ class DSRouting:
             self.ϵ / len(self.sinks)
             + (1 - self.ϵ) * tf.nn.softmax(s_tr))
         self.π_ev = tf.to_float(tf.equal(
-            tf.expand_dims(tf.to_int32(tf.argmax(self.s_ev, 1)), 1),
+            tf.expand_dims(tf.to_int32(tf.argmax(s_ev, 1)), 1),
             tf.range(len(self.sinks))))
 
     def link_backward(self, y):
@@ -308,58 +308,100 @@ class CRRouting:
 # Smart Routing Layers (to-do: clean up)
 ################################################################################
 
-# class SmartDSRouting:
-#     def __init__(self, ϵ, *sinks):
-#         self.ϵ = ϵ
-#         self.sinks = sinks
-#
-#     def link_forward(self, x, mode):
-#         n_chan_in = np.prod([d.value for d in x.get_shape()[1:]])
-#         x_flat = tf.reshape(x, (tf.shape(x)[0], n_chan_in))
-#         self.w0 = tf.Variable(tf.random_normal((n_chan_in, 16)) / np.sqrt(n_chan_in))
-#         self.w1 = tf.Variable(tf.random_normal((16, len(self.sinks))) / 4)
-#         self.b0 = tf.Variable(tf.zeros(16))
-#         self.b1 = tf.Variable(tf.zeros(len(self.sinks)))
-#         self.π_tr = (
-#             self.ϵ / len(self.sinks) +
-#             (1 - self.ϵ) *
-#             tf.nn.softmax(
-#                 tf.matmul(
-#                     tf.nn.relu(tf.matmul(x_flat, self.w0) + self.b0),
-#                     self.w1)
-#                 + self.b1))
-#         self.π_ev = tf.to_float(tf.equal(
-#             tf.expand_dims(tf.to_int32(tf.argmax(self.π_tr, 1)), 1),
-#             tf.range(len(self.sinks))))
-#
-#     def link_backward(self, y):
-#         pass
-#
-# class SmartCRRouting:
-#     def __init__(self, k_cre, ϵ, *sinks):
-#         self.k_cre = k_cre
-#         self.ϵ = ϵ
-#         self.sinks = sinks
-#
-#     def link_forward(self, x, mode):
-#         n_chan_in = np.prod([d.value for d in x.get_shape()[1:]])
-#         x_flat = tf.reshape(x, (tf.shape(x)[0], n_chan_in))
-#         self.w0 = tf.Variable(tf.random_normal((n_chan_in, 16)) / np.sqrt(n_chan_in))
-#         self.w1 = tf.Variable(tf.random_normal((16, len(self.sinks))) / 4)
-#         self.b0 = tf.Variable(tf.zeros(16))
-#         self.b1 = tf.Variable(tf.zeros(len(self.sinks)))
-#         self.ℓ_est = self.b1 + tf.matmul(
-#             tf.nn.relu(self.b0 + tf.matmul(x_flat, self.w0)),
-#             self.w1)
-#         self.π_tr = (
-#             self.ϵ / len(self.sinks)
-#             + (1 - self.ϵ) * tf.to_float(
-#                 tf.equal(self.ℓ_est, tf.reduce_min(self.ℓ_est, 1, True))))
-#         self.π_ev = tf.to_float(tf.equal(
-#             tf.expand_dims(tf.to_int32(tf.argmin(self.ℓ_est, 1)), 1),
-#             tf.range(len(self.sinks))))
-#
-#     def link_backward(self, y):
-#         self.ℓℓ_tr = self.p_tr * self.k_cre * sum(
-#             tf.square(self.sinks[i].ℓ_ev - self.ℓ_est[:, i])
-#             for i in range(len(self.sinks)))
+class SmartDSRouting:
+    def __init__(self, ϵ, *sinks):
+        self.ϵ = ϵ
+        self.sinks = sinks
+
+    def link_forward(self, x_tr, x_ev):
+        n_chan_in = np.prod([d.value for d in x_tr.get_shape()[1:]])
+        w_shape = (n_chan_in, len(self.sinks))
+        self.w0 = tf.Variable(tf.random_normal((n_chan_in, 16)) / np.sqrt(n_chan_in))
+        self.w1 = tf.Variable(tf.random_normal((16, len(self.sinks))) / 4)
+        self.b0 = tf.Variable(tf.zeros(16))
+        self.b1 = tf.Variable(tf.zeros(len(self.sinks)))
+        x_tr_flat = tf.reshape(x_tr, (tf.shape(x_tr)[0], n_chan_in))
+        x_ev_flat = tf.reshape(x_ev, (tf.shape(x_ev)[0], n_chan_in))
+        s_tr = (tf.matmul(
+            tf.nn.relu(tf.matmul(x_tr_flat, self.w0) + self.b0),
+            self.w1) + self.b1)
+        s_ev = (tf.matmul(
+            tf.nn.relu(tf.matmul(x_ev_flat, self.w0) + self.b0),
+            self.w1) + self.b1)
+        self.π_tr = (
+            self.ϵ / len(self.sinks)
+            + (1 - self.ϵ) * tf.nn.softmax(s_tr))
+        self.π_ev = tf.to_float(tf.equal(
+            tf.expand_dims(tf.to_int32(tf.argmax(self.s_ev, 1)), 1),
+            tf.range(len(self.sinks))))
+
+    def link_backward(self, y):
+        self.k_l2 = 2.5e-4
+        ℓ_l2 = self.k_l2 * (
+            tf.reduce_sum(tf.square(self.w0)) +
+            tf.reduce_sum(tf.square(self.w1)))
+        self.ℓℓ_tr = ℓ_l2
+
+class SmartCRRouting:
+    def __init__(self, k_cre, ϵ, *sinks):
+        self.k_cre = k_cre
+        self.ϵ = ϵ
+        self.sinks = sinks
+
+    def link_forward(self, x, mode):
+        n_chan_in = np.prod([d.value for d in x.get_shape()[1:]])
+        x_flat = tf.reshape(x, (tf.shape(x)[0], n_chan_in))
+        self.w0 = tf.Variable(tf.random_normal((n_chan_in, 16)) / np.sqrt(n_chan_in))
+        self.w1 = tf.Variable(tf.random_normal((16, len(self.sinks))) / 4)
+        self.b0 = tf.Variable(tf.zeros(16))
+        self.b1 = tf.Variable(tf.zeros(len(self.sinks)))
+        self.ℓ_est = self.b1 + tf.matmul(
+            tf.nn.relu(self.b0 + tf.matmul(x_flat, self.w0)),
+            self.w1)
+        self.π_tr = (
+            self.ϵ / len(self.sinks)
+            + (1 - self.ϵ) * tf.to_float(
+                tf.equal(self.ℓ_est, tf.reduce_min(self.ℓ_est, 1, True))))
+        self.π_ev = tf.to_float(tf.equal(
+            tf.expand_dims(tf.to_int32(tf.argmin(self.ℓ_est, 1)), 1),
+            tf.range(len(self.sinks))))
+
+    def link_forward(self, x_tr, x_ev):
+        n_chan_in = np.prod([d.value for d in x_tr.get_shape()[1:]])
+        w_shape = (n_chan_in, len(self.sinks))
+        self.w0 = tf.Variable(tf.random_normal((n_chan_in, 16)) / np.sqrt(n_chan_in))
+        self.w1 = tf.Variable(tf.random_normal((16, len(self.sinks))) / 4)
+        self.b0 = tf.Variable(tf.zeros(16))
+        self.b1 = tf.Variable(tf.zeros(len(self.sinks)))
+        x_tr_flat = tf.reshape(x_tr, (tf.shape(x_tr)[0], n_chan_in))
+        x_ev_flat = tf.reshape(x_ev, (tf.shape(x_ev)[0], n_chan_in))
+        self.ℓ_est_tr = (tf.matmul(
+            tf.nn.relu(self.b0 + tf.matmul(x_tr_flat, self.w0)),
+            self.w1) + self.b1)
+        self.ℓ_est_ev = (tf.matmul(
+            tf.nn.relu(self.b0 + tf.matmul(x_ev_flat, self.w0)),
+            self.w1) + self.b1)
+        self.π_tr = (
+            self.ϵ / len(self.sinks)
+            + (1 - self.ϵ) * tf.to_float(
+                tf.equal(self.ℓ_est_tr, tf.reduce_min(self.ℓ_est_tr, 1, True))))
+        self.π_ev = tf.to_float(tf.equal(
+            tf.expand_dims(tf.to_int32(tf.argmin(self.ℓ_est_ev, 1)), 1),
+            tf.range(len(self.sinks))))
+
+    def link_backward(self, y):
+        sq_err = sum(
+            self.π_tr[:, i]
+            * tf.square(s.ℓ_ev - self.ℓ_est_tr[:, i])
+            for i, s in enumerate(self.sinks))
+        ℓ_opt = reduce(tf.minimum, (s.ℓ_ev for s in self.sinks))
+        ℓ_π = sum(self.π_ev[:, i] * s.ℓ_ev for i, s in enumerate(self.sinks))
+        ℓ_rout = ℓ_π - ℓ_opt
+        k_cre = tf.stop_gradient(
+            tf.reduce_mean(self.p_tr * ℓ_rout)
+            / tf.reduce_mean(self.p_tr * sq_err))
+        self.k_l2 = 2.5e-4
+        ℓ_l2 = self.k_l2 * (
+            tf.reduce_sum(tf.square(self.w0)) +
+            tf.reduce_sum(tf.square(self.w1)))
+        self.ℓℓ_tr = k_cre * sq_err + ℓ_l2
