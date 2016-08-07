@@ -3,6 +3,11 @@ from functools import reduce
 import numpy as np
 import tensorflow as tf
 
+####
+
+placeholder_k_l2 = 1e-3
+placeholder_k_cre = 1e-1
+
 ################################################################################
 # Network
 ################################################################################
@@ -44,10 +49,10 @@ class Net:
                 layer.ℓℓ_ev
                 + sum(layer.π_ev[:, i] * s.ℓ_ev
                       for i, s in enumerate(layer.sinks)))
-            # layer.ℓ_opt = (
-            #     layer.ℓℓ_ev + (
-            #         reduce(tf.minimum, (s.ℓ_opt for s in layer.sinks))
-            #         if len(layer.sinks) > 0 else 0))
+            layer.ℓ_opt = (
+                layer.ℓℓ_ev + (
+                    reduce(tf.minimum, (s.ℓ_opt for s in layer.sinks))
+                    if len(layer.sinks) > 0 else 0))
         link(root, self.x0, self.x0)
         self.root = root
         self.ℓ_tr = root.ℓ_tr
@@ -76,7 +81,7 @@ def drop(x, λ):
 def batch_norm(x_tr, x_ev, d=0.99, ϵ=1e-5):
     n_dim = len(x_tr.get_shape())
     n_chan = x_tr.get_shape()[-1].value
-    γ = tf.Variable(tf.ones(n_chan))
+    γ = 1#tf.Variable(tf.ones(n_chan))
     β = tf.Variable(tf.zeros(n_chan))
     m_avg = tf.Variable(tf.zeros(n_chan), trainable=False)
     v_avg = tf.Variable(tf.ones(n_chan), trainable=False)
@@ -112,7 +117,7 @@ class LogReg:
     def link_backward(self, y):
         p_cls = self.ϵ / self.n_classes + (1 - self.ϵ) * self.x_tr
         ℓ_err = -tf.reduce_sum(y * tf.log(p_cls), 1)
-        self.k_l2 = 2.5e-4
+        self.k_l2 = placeholder_k_l2
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
         self.ℓℓ_tr = ℓ_err + ℓ_l2
         self.ℓℓ_ev = ℓ_err
@@ -144,7 +149,7 @@ class ReLin:
         self.n_ops = np.prod(self.w.get_shape().as_list())
 
     def link_backward(self, y):
-        self.k_l2 = 2.5e-4
+        self.k_l2 = placeholder_k_l2
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
         ℓ_cpt = self.k_cpt * self.n_ops
         self.ℓℓ_tr = ℓ_cpt + ℓ_l2
@@ -175,7 +180,7 @@ class ReConv:
         self.n_ops = np.prod(self.w.get_shape().as_list()) * n_px / self.step**2
 
     def link_backward(self, y):
-        self.k_l2 = 2.5e-4
+        self.k_l2 = placeholder_k_l2
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
         ℓ_cpt = self.k_cpt * self.n_ops
         self.ℓℓ_tr = ℓ_cpt + ℓ_l2
@@ -214,7 +219,7 @@ class ReConvMP:
         self.n_ops = np.prod(self.w.get_shape().as_list()) * n_px
 
     def link_backward(self, y):
-        self.k_l2 = 2.5e-4
+        self.k_l2 = placeholder_k_l2
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
         ℓ_cpt = self.k_cpt * self.n_ops
         self.ℓℓ_tr = ℓ_cpt + ℓ_l2
@@ -246,7 +251,7 @@ class DSRouting:
             tf.range(len(self.sinks))))
 
     def link_backward(self, y):
-        self.k_l2 = 2.5e-4
+        self.k_l2 = placeholder_k_l2
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
         self.ℓℓ_tr = ℓ_l2
 
@@ -293,10 +298,10 @@ class CRRouting:
         ℓ_opt = reduce(tf.minimum, (s.ℓ_ev for s in self.sinks))
         ℓ_π = sum(self.π_ev[:, i] * s.ℓ_ev for i, s in enumerate(self.sinks))
         ℓ_rout = ℓ_π - ℓ_opt
-        k_cre = tf.stop_gradient(
-            tf.reduce_mean(self.p_tr * ℓ_rout)
-            / tf.reduce_mean(self.p_tr * sq_err))
-        self.k_l2 = 2.5e-4
+        k_cre = placeholder_k_cre * tf.stop_gradient(
+            tf.reduce_sum(self.p_tr * ℓ_rout)
+            / tf.reduce_sum(self.p_tr * sq_err))
+        self.k_l2 = placeholder_k_l2
         ℓ_l2 = self.k_l2 * tf.reduce_sum(tf.square(self.w))
         self.ℓℓ_tr = k_cre * sq_err + ℓ_l2
 
@@ -336,7 +341,7 @@ class SmartDSRouting:
             tf.range(len(self.sinks))))
 
     def link_backward(self, y):
-        self.k_l2 = 2.5e-4
+        self.k_l2 = placeholder_k_l2
         ℓ_l2 = self.k_l2 * (
             tf.reduce_sum(tf.square(self.w0)) +
             tf.reduce_sum(tf.square(self.w1)))
@@ -392,7 +397,8 @@ class SmartCRRouting:
     def link_backward(self, y):
         sq_err = sum(
             self.π_tr[:, i]
-            * tf.square(s.ℓ_ev - self.ℓ_est_tr[:, i])
+            # * tf.square(s.ℓ_ev - self.ℓ_est_tr[:, i])
+            * tf.square(s.ℓ_opt - self.ℓ_est_tr[:, i])
             for i, s in enumerate(self.sinks))
         ℓ_opt = reduce(tf.minimum, (s.ℓ_ev for s in self.sinks))
         ℓ_π = sum(self.π_ev[:, i] * s.ℓ_ev for i, s in enumerate(self.sinks))
@@ -400,7 +406,7 @@ class SmartCRRouting:
         k_cre = tf.stop_gradient(
             tf.reduce_mean(self.p_tr * ℓ_rout)
             / tf.reduce_mean(self.p_tr * sq_err))
-        self.k_l2 = 2.5e-4
+        self.k_l2 = placeholder_k_l2
         ℓ_l2 = self.k_l2 * (
             tf.reduce_sum(tf.square(self.w0)) +
             tf.reduce_sum(tf.square(self.w1)))

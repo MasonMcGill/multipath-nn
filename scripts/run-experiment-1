@@ -14,7 +14,7 @@ from lib.training import train
 # Load data.
 ################################################################################
 
-dataset = Dataset('data/cifar-10.mat')
+dataset = Dataset('data/cifar-10-lln.mat')
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
 n_cls = y_shape[0]
@@ -25,8 +25,8 @@ n_cls = y_shape[0]
 
 k_cpts = [0]# + [4**i * 1e-10 for i in range(7)]
 k_cre = 1e-3
-λ = 1#0.75
-ϵ = 0.5
+λ = 1
+ϵ = 0.01
 
 batch_size = 64
 n_epochs = 100
@@ -37,59 +37,40 @@ n_epochs = 100
 
 log = {'sr': [], 'ds': [], 'cr': []}
 
-net = Net(x0_shape, y_shape,
-    ReConv(64, 1, 3, 0, 0.7,
-    ReConvMP(64, 2, 3, 0, 1,
-        ReConv(128, 1, 3, 0, 0.6,
-        ReConvMP(128, 2, 3, 0, 1,
-            ReConv(256, 1, 3, 0, 0.6,
-            ReConv(256, 1, 3, 0, 0.6,
-            ReConvMP(256, 2, 3, 0, 1,
-                ReConv(512, 1, 3, 0, 0.6,
-                ReConv(512, 1, 3, 0, 0.6,
-                ReConvMP(512, 2, 3, 0, 1,
-                    ReConv(512, 1, 2, 0, 0.6,
-                    ReConv(512, 1, 2, 0, 0.6,
-                    ReConvMP(512, 2, 2, 0, 1,
-                        ReLin(512, 0, 1,
-                            LogReg(n_cls))))))))))))))))
+################################################################################
+# Train a statically-routed network.
+################################################################################
 
-train(net, dataset, 'VGG', batch_size, n_epochs)
-exit()
+print('\n —— Training statically-routed networks... ——\n')
 
-# ################################################################################
-# # Train a statically-routed network.
-# ################################################################################
-#
-# print('\n —— Training statically-routed networks... ——\n')
-#
-# for n_tf in [6]:
-# # for n_tf in range(7):
-#     root = ReLin(512, 0, λ, LogReg(n_cls))
-#     for i in reversed(range(n_tf)):
-#         n_chan = 2**(i // 2) * 64
-#         root = (ReConv(n_chan, 1, 3, 0, λ, root) if i % 2 == 0 else
-#                 ReConvMP(n_chan, 2, 3, 0, λ, root))
-#     net = Net(x0_shape, y_shape, root)
-#     name = 'Static Routing (n_tf=%i)' % n_tf
-#     desc = train(net, dataset, name, batch_size, n_epochs)
-#     log['sr'].append({'n_tf': n_tf, 'net': desc})
-#
-# exit()
-#
-# ################################################################################
-# # Train decision smoothing cascades.
-# ################################################################################
-#
+for n_tf in [6]:
+# for n_tf in range(7):
+    root = ReLin(512, 0, λ, LogReg(n_cls))
+    for i in reversed(range(n_tf)):
+        n_chan = 2**(i // 2) * 64
+        root = (ReConv(n_chan, 1, 3, 0, λ, root) if i % 2 == 0 else
+                ReConvMP(n_chan, 2, 3, 0, λ, root))
+    net = Net(x0_shape, y_shape, root)
+    name = 'Static Routing (n_tf=%i)' % n_tf
+    desc = train(net, dataset, name, batch_size, n_epochs)
+    log['sr'].append({'n_tf': n_tf, 'net': desc})
+
+################################################################################
+# Train decision smoothing cascades.
+################################################################################
+
 # print('\n —— Training decision smoothing cascades... ——\n')
 #
 # for k_cpt in k_cpts:
 #     net = Net(x0_shape, y_shape, DSRouting(ϵ, LogReg(n_cls),
-#         ReConv(64, 1, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
+#         ReConv(64, 1, 3, k_cpt, λ,
+#         ReConv(64, 1, 3, k_cpt, λ,
 #         ReConvMP(64, 2, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
-#             ReConv(128, 1, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
+#             ReConv(128, 1, 3, k_cpt, λ,
+#             ReConv(128, 1, 3, k_cpt, λ,
 #             ReConvMP(128, 2, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
-#                 ReConv(256, 1, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
+#                 ReConv(256, 1, 3, k_cpt, λ,
+#                 ReConv(256, 1, 3, k_cpt, λ,
 #                 ReConvMP(256, 2, 3, k_cpt, λ, DSRouting(ϵ, LogReg(n_cls),
 #                     ReLin(512, 0, λ, LogReg(n_cls))))))))))))))))
 #     name = 'Decision Smoothing Cascade (k_cpt=%.1e)' % k_cpt
@@ -104,11 +85,14 @@ print('\n —— Training cost regression cascades... ——\n')
 
 for k_cpt in k_cpts:
     net = Net(x0_shape, y_shape, CRRouting(k_cre, ϵ, LogReg(n_cls),
-        ReConv(64, 1, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
+        ReConv(64, 1, 3, k_cpt, λ,
+        ReConv(64, 1, 3, k_cpt, λ,
         ReConvMP(64, 2, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
-            ReConv(128, 1, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
+            ReConv(128, 1, 3, k_cpt, λ,
+            ReConv(128, 1, 3, k_cpt, λ,
             ReConvMP(128, 2, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
-                ReConv(256, 1, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
+                ReConv(256, 1, 3, k_cpt, λ,
+                ReConv(256, 1, 3, k_cpt, λ,
                 ReConvMP(256, 2, 3, k_cpt, λ, CRRouting(k_cre, ϵ, LogReg(n_cls),
                     ReLin(512, 0, λ, LogReg(n_cls))))))))))))))))
     name = 'Cost Regression Cascade (k_cpt=%.1e)' % k_cpt
