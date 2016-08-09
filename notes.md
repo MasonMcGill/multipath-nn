@@ -10,6 +10,8 @@
 - Static routing vs. dynamic routing (experiment 1)
 - Static regularization vs. dynamic regularization (test informally)
 - Regularization in c_tr vs. regularization in c_ev (test informally)
+- Optimistic vs. pragmatic cost regression (test informally)
+- Exploration-safe DS routing (treat the "explore" fraction of p_tr as constant; test informally)
 - Decision smoothing vs. cost regression (experiment 2)
 - Trees vs. cascades (experiment 3)
 - Smart routing vs. dumb routing (experiment 4)
