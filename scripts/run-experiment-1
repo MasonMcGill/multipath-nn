@@ -9,7 +9,8 @@ from os import makedirs
 import tensorflow as tf
 
 from lib.data import Dataset
-from lib.layers import BatchNorm, Conv, LinTrans, LogReg, MaxPool, Rect
+from lib.layers import BatchNorm, Chain, Conv, LinTrans, MaxPool, Rect
+from lib.layers import LogReg as LibLogReg
 from lib.nets import CRNet, DSNet, SRNet
 from lib.training import train
 
@@ -20,7 +21,6 @@ from lib.training import train
 dataset = Dataset('data/cifar-10-lln.mat')
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
-n_cls = y_shape[0]
 
 ################################################################################
 # Define network hyperparameters.
@@ -28,9 +28,6 @@ n_cls = y_shape[0]
 
 k_cpts = [1e-9]# + [4**i * 1e-10 for i in range(7)]
 k_l2 = 1e-3
-
-batch_size = 64
-n_epochs = 100
 
 ################################################################################
 # Allocate a log for the experiment results.
@@ -42,21 +39,25 @@ log = {'sr': [], 'ds': [], 'cr': []}
 # Define network components.
 ################################################################################
 
-def re_conv_mp(n_chan, *sinks):
-    conv_params = {'n_chan': n_chan, 'supp': 3, 'k_l2': k_l2}
-    pool_params = {'stride': 2, 'supp': 2}
-    return (
-        Conv(conv_params, BatchNorm({}, Rect({},
-            Conv(conv_params, BatchNorm({}, Rect({},
-                Conv(conv_params, BatchNorm({}, Rect({},
-                    MaxPool(pool_params, *sinks)))))))))))
+class ReConvMP(Chain):
+    def __init__(self, n_chan, *sinks):
+        conv_params = {'n_chan': n_chan, 'supp': 3, 'k_l2': k_l2}
+        pool_params = {'stride': 2, 'supp': 2}
+        super().__init__({}, [
+            Conv(conv_params), BatchNorm({}), Rect({}),
+            Conv(conv_params), BatchNorm({}), Rect({}),
+            Conv(conv_params), BatchNorm({}), Rect({}),
+            MaxPool(pool_params)], *sinks)
 
-def re_lin(n_chan, *sinks):
-    return LinTrans({'n_chan': n_chan, 'k_l2': k_l2},
-        BatchNorm({}, Rect({}, *sinks)))
+class ReLin(Chain):
+    def __init__(self, n_chan, *sinks):
+        super().__init__({}, [
+            LinTrans({'n_chan': n_chan, 'k_l2': k_l2}),
+            BatchNorm({}), Rect({})], *sinks)
 
-def log_reg():
-    return LogReg({'k_l2': k_l2})
+class LogReg(Chain):
+    def __init__(self):
+        super().__init__({}, [LibLogReg({'k_l2': k_l2})])
 
 ################################################################################
 # Define an optimizer.
@@ -74,9 +75,9 @@ optimizer = tf.train.MomentumOptimizer(λ_learn, 0.9)
 #
 # for n_tf in [3]:
 # # for n_tf in range(4):
-#     root = re_lin(512, log_reg())
+#     root = ReLin(512, LogReg())
 #     for i in reversed(range(n_tf)):
-#         root = re_conv_mp(64 * 2**i, root)
+#         root = ReConvMP(64 * 2**i, root)
 #     net = SRNet(x0_shape, y_shape, optimizer, root)
 #     name = 'Static Routing (n_tf=%i)' % n_tf
 #     desc = train(net, dataset, name=name, hypers=(lambda t: {t_train: t}))
@@ -90,10 +91,10 @@ optimizer = tf.train.MomentumOptimizer(λ_learn, 0.9)
 #
 # for k_cpt in k_cpts:
 #     net = DSNet(x0_shape, y_shape, optimizer,
-#         re_conv_mp(64, log_reg(),
-#             re_conv_mp(128, log_reg(),
-#                 re_conv_mp(256, log_reg(),
-#                     re_lin(512, log_reg())))))
+#         ReConvMP(64, LogReg(),
+#             ReConvMP(128, LogReg(),
+#                 ReConvMP(256, LogReg(),
+#                     ReLin(512, LogReg())))))
 #     name = 'Decision Smoothing Cascade (k_cpt=%.1e)' % k_cpt
 #     desc = train(net, dataset, logging_period=1, name=name, hypers=(
 #         lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
@@ -107,10 +108,10 @@ print('\n —— Training cost regression cascades... ——\n')
 
 for k_cpt in k_cpts:
     net = CRNet(x0_shape, y_shape, optimizer,
-        re_conv_mp(64, log_reg(),
-            re_conv_mp(128, log_reg(),
-                re_conv_mp(256, log_reg(),
-                    re_lin(512, log_reg())))))
+        ReConvMP(64, LogReg(),
+            ReConvMP(128, LogReg(),
+                ReConvMP(256, LogReg(),
+                    ReLin(512, LogReg())))))
     name = 'Cost Regression Cascade (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, logging_period=1, name=name, hypers=(
         lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))

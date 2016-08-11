@@ -137,3 +137,26 @@ class BatchNorm(Layer):
         self.x = tf.cond(tf.equal(sigs.mode, 'tr'),
             lambda: x_tr, lambda: x_ev)
         self.params = Namespace(γ=γ, β=β)
+
+################################################################################
+# Compound Layers
+################################################################################
+
+class Chain(Layer):
+    def __init__(self, hypers, comps, *sinks):
+        super().__init__(hypers, *sinks)
+        self.comps = comps
+
+    def link(self, sigs):
+        super().link(sigs)
+        for ℓ in self.comps:
+            ℓ.link(sigs)
+            sigs.x = ℓ.x
+        self.c_err = sum(ℓ.c_err for ℓ in self.comps)
+        self.c_mod = sum(ℓ.c_mod for ℓ in self.comps)
+        self.n_ops = sum(ℓ.n_ops for ℓ in self.comps)
+        self.x = sigs.x
+        self.params = Namespace(**{
+            ('layer%i_%s' % (i, k)): v
+            for i, ℓ in enumerate(self.comps)
+            for k, v in vars(ℓ.params).items()})
