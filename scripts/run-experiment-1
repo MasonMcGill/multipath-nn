@@ -26,9 +26,8 @@ n_cls = y_shape[0]
 # Define network hyperparameters.
 ################################################################################
 
-k_cpts = [0]# + [4**i * 1e-10 for i in range(7)]
+k_cpts = [1e-9]# + [4**i * 1e-10 for i in range(7)]
 k_l2 = 1e-3
-λ = 1
 
 batch_size = 64
 n_epochs = 100
@@ -73,49 +72,49 @@ optimizer = tf.train.MomentumOptimizer(λ_learn, 0.9)
 
 # print('\n —— Training statically-routed networks... ——\n')
 #
-# for n_tf in range(4):
+# for n_tf in [3]:
+# # for n_tf in range(4):
 #     root = re_lin(512, log_reg())
 #     for i in reversed(range(n_tf)):
 #         root = re_conv_mp(64 * 2**i, root)
-#     net = SRNet(x0_shape, y_shape, root)
+#     net = SRNet(x0_shape, y_shape, optimizer, root)
 #     name = 'Static Routing (n_tf=%i)' % n_tf
-#     desc = train(net, dataset, optimizer, name=name, params=(
-#         lambda t: {t_train: t}))
+#     desc = train(net, dataset, name=name, hypers=(lambda t: {t_train: t}))
 #     log['sr'].append({'n_tf': n_tf, 'net': desc})
 
 ################################################################################
 # Train decision smoothing cascades.
 ################################################################################
 
-print('\n —— Training decision smoothing cascades... ——\n')
-
-for k_cpt in k_cpts:
-    net = DSNet(x0_shape, y_shape,
-        re_conv_mp(64, log_reg(),
-            re_conv_mp(128, log_reg(),
-                re_conv_mp(256, log_reg(),
-                    re_lin(512, log_reg())))))
-    name = 'Decision Smoothing Cascade (k_cpt=%.1e)' % k_cpt
-    desc = train(net, dataset, optimizer, logging_period=5, name=name, params=(
-        lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
-    log['ds'].append({'k_cpt': k_cpt, 'net': desc})
+# print('\n —— Training decision smoothing cascades... ——\n')
+#
+# for k_cpt in k_cpts:
+#     net = DSNet(x0_shape, y_shape, optimizer,
+#         re_conv_mp(64, log_reg(),
+#             re_conv_mp(128, log_reg(),
+#                 re_conv_mp(256, log_reg(),
+#                     re_lin(512, log_reg())))))
+#     name = 'Decision Smoothing Cascade (k_cpt=%.1e)' % k_cpt
+#     desc = train(net, dataset, logging_period=1, name=name, hypers=(
+#         lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
+#     log['ds'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
 # Train cost regressing cascades.
 ################################################################################
 
-# print('\n —— Training cost regression cascades... ——\n')
-#
-# for k_cpt in k_cpts:
-#     net = CRNet(x0_shape, y_shape,
-#         re_conv_mp(64, log_reg(),
-#             re_conv_mp(128, log_reg(),
-#                 re_conv_mp(256, log_reg(),
-#                     re_lin(512, log_reg())))))
-#     name = 'Cost Regression Cascade (k_cpt=%.1e)' % k_cpt
-#     desc = train(net, dataset, optimizer, logging_period=1, name=name, params=(
-#         lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
-#     log['cr'].append({'k_cpt': k_cpt, 'net': desc})
+print('\n —— Training cost regression cascades... ——\n')
+
+for k_cpt in k_cpts:
+    net = CRNet(x0_shape, y_shape, optimizer,
+        re_conv_mp(64, log_reg(),
+            re_conv_mp(128, log_reg(),
+                re_conv_mp(256, log_reg(),
+                    re_lin(512, log_reg())))))
+    name = 'Cost Regression Cascade (k_cpt=%.1e)' % k_cpt
+    desc = train(net, dataset, logging_period=1, name=name, hypers=(
+        lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
+    log['cr'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
 # Train decision smoothing trees.

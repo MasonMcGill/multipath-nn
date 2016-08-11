@@ -33,29 +33,36 @@ class Net(metaclass=ABCMeta):
     def leaves(self):
         return (ℓ for ℓ in self.layers if len(ℓ.sinks) == 0)
 
+    def train(self, x0, y, hypers):
+        pass
+
 ################################################################################
 # Statically-Routed Networks
 ################################################################################
 
 class SRNet(Net):
-    def __init__(self, x0_shape, y_shape, root):
+    def __init__(self, x0_shape, y_shape, optimizer, root):
         super().__init__(x0_shape, y_shape, root)
         for ℓ in self.layers:
-            ℓ.p_tr = tf.ones((tf.shape(ℓ.x)[0],))
             ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
-        self.c_tr = sum(ℓ.c_err + ℓ.c_mod for ℓ in self.layers)
+        c_tr = sum(ℓ.c_err + ℓ.c_mod for ℓ in self.layers)
+        self._train_op = optimizer.minimize(tf.reduce_mean(c_tr))
+
+    def train(self, x0, y, hypers):
+        self._train_op.run({self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
 
 ################################################################################
 # Decision Smoothing Networks
 ################################################################################
 
 class DSNet(Net):
-    def __init__(self, x0_shape, y_shape, root):
+    def __init__(self, x0_shape, y_shape, optimizer, root):
         super().__init__(x0_shape, y_shape, root)
         self.k_cpt = tf.placeholder_with_default(0.0, ())
         self.k_l2 = tf.placeholder_with_default(0.0, ())
         self.ϵ = tf.placeholder_with_default(0.01, ())
         c_mod = 0.0
+        lr_scales = {}
         def route_stat(ℓ, p_tr, p_ev):
             ℓ.p_tr = p_tr
             ℓ.p_ev = p_ev
@@ -71,40 +78,47 @@ class DSNet(Net):
             b = tf.Variable(tf.zeros(len(ℓ.sinks)))
             x_flat = tf.reshape(ℓ.x, (-1, n_chan_in))
             s = tf.matmul(x_flat, w) + b
-            π_tr = (
-                self.ϵ / len(ℓ.sinks)
-                + (1 - self.ϵ) * tf.nn.softmax(s))
+            π_tr = tf.maximum(tf.nn.softmax(s), 0.1)
             π_ev = tf.to_float(tf.equal(
                 tf.expand_dims(tf.to_int32(tf.argmax(s, 1)), 1),
                 tf.range(len(ℓ.sinks))))
             for i, s in enumerate(ℓ.sinks):
                 route(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i])
             nonlocal c_mod
-            c_mod += (
-                tf.stop_gradient(ℓ.p_tr)
-                * self.k_l2 * tf.reduce_sum(tf.square(w)))
+            c_mod += self.k_l2 * tf.reduce_sum(tf.square(w))
+            lr_scales[w] = 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
         def route(ℓ, p_tr, p_ev):
             if len(ℓ.sinks) < 2: route_stat(ℓ, p_tr, p_ev)
             else: route_dyn(ℓ, p_tr, p_ev)
-        route(self.root, 1.0, 1.0)
+        n_pts = tf.shape(self.x0)[0]
+        route(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)))
         c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.k_cpt * ℓ.n_ops for ℓ in self.layers)
-        c_mod += sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_mod for ℓ in self.layers)
-        self.c_tr = c_err + c_cpt + c_mod
-        # To-do: remove exploitation bias
+        c_mod += sum(ℓ.c_mod for ℓ in self.layers)
+        c_tr = c_err + c_cpt + c_mod
+        for ℓ in self.layers:
+            for p in vars(ℓ.params).values():
+                lr_scales[p] = 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
+        grads = optimizer.compute_gradients(tf.reduce_mean(c_tr))
+        scaled_grads = [(lr_scales.get(p, 1.0) * g, p) for g, p in grads]
+        self._train_op = optimizer.apply_gradients(scaled_grads)
+
+    def train(self, x0, y, hypers):
+        self._train_op.run({self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
 
 ################################################################################
 # Cost Regression Networks
 ################################################################################
 
 class CRNet(Net):
-    def __init__(self, x0_shape, y_shape, root):
+    def __init__(self, x0_shape, y_shape, optimizer, root):
         super().__init__(x0_shape, y_shape, root)
         self.k_cpt = tf.placeholder_with_default(0.0, ())
         self.k_l2 = tf.placeholder_with_default(0.0, ())
-        self.k_cre = tf.placeholder_with_default(0.01, ())
+        self.k_cre = tf.placeholder_with_default(1e-3, ())
         self.ϵ = tf.placeholder_with_default(0.1, ())
         c_mod = 0.0
+        lr_scales = {}
         def route_stat(ℓ, p_tr, p_ev):
             ℓ.p_tr = p_tr
             ℓ.p_ev = p_ev
@@ -138,15 +152,24 @@ class CRNet(Net):
                 + sum(π_ev[:, i] * s.c_ev
                       for i, s in enumerate(ℓ.sinks)))
             nonlocal c_mod
-            c_mod += (
-                tf.stop_gradient(ℓ.p_tr)
-                * self.k_l2 * tf.reduce_sum(tf.square(w)))
+            c_mod += self.k_l2 * tf.reduce_sum(tf.square(w))
+            lr_scales[w] = 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
         def route(ℓ, p_tr, p_ev):
             if len(ℓ.sinks) < 2: route_stat(ℓ, p_tr, p_ev)
             else: route_dyn(ℓ, p_tr, p_ev)
-        route(self.root, 1.0, 1.0)
+        n_pts = tf.shape(self.x0)[0]
+        route(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)))
         c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
-        c_mod += sum(ℓ.p_tr * ℓ.c_mod for ℓ in self.layers)
-        self.c_tr = c_err + c_cpt + c_cre + c_mod
+        c_mod += sum(ℓ.c_mod for ℓ in self.layers)
+        c_tr = c_err + c_cpt + c_cre + c_mod
+        for ℓ in self.layers:
+            for p in vars(ℓ.params).values():
+                lr_scales[p] = 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
+        grads = optimizer.compute_gradients(tf.reduce_mean(c_tr))
+        scaled_grads = [(lr_scales.get(p, 1.0) * g, p) for g, p in grads]
+        self._train_op = optimizer.apply_gradients(scaled_grads)
+
+    def train(self, x0, y, hypers):
+        self._train_op.run({self.x0: x0, self.y: y, self.mode: 'tr', **hypers})

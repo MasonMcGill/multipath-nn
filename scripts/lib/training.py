@@ -6,19 +6,15 @@ from lib.desc import net_desc, render_net_desc
 # Network Training
 ################################################################################
 
-def train(net, dataset, optimizer=tf.train.MomentumOptimizer(0.01, 0.9),
-          params=(lambda t: {}), batch_size=64, n_epochs=100,
-          logging_period=5, name='Network'):
-    train_op = optimizer.minimize(tf.reduce_mean(net.c_tr))
+def train(net, dataset, hypers=(lambda t: {}), batch_size=64,
+          n_epochs=100, logging_period=5, name='Network'):
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
         for t in range(n_epochs):
             for x0, y in dataset.training_batches(batch_size):
-                train_op.run({
-                    net.x0: x0, net.y: y, net.mode: 'tr',
-                    **params(t)})
+                net.train(x0, y, hypers(t))
             if (t + 1) % logging_period == 0:
-                desc = net_desc(sess, net, dataset)
                 print(render_net_desc(
-                    desc, '%s — Epoch %i' % (name, t + 1)))
+                    net_desc(sess, net, dataset),
+                    '%s — Epoch %i' % (name, t + 1)))
         return net_desc(sess, net, dataset)
