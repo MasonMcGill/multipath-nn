@@ -9,7 +9,7 @@ from os import makedirs
 import tensorflow as tf
 
 from lib.data import Dataset
-from lib.layers import BatchNorm, Chain, Conv, LinTrans, MaxPool, Rect
+from lib.layers import BatchNorm, Chain, Conv, Layer, LinTrans, MaxPool, Rect
 from lib.layers import LogReg as LibLogReg
 from lib.nets import CRNet, DSNet, SRNet
 from lib.training import train
@@ -38,6 +38,10 @@ log = {'sr': [], 'ds': [], 'cr': []}
 ################################################################################
 # Define network components.
 ################################################################################
+
+class Input(Layer):
+    def __init__(self, *sinks):
+        super().__init__({}, *sinks)
 
 class ReConvMP(Chain):
     def __init__(self, n_chan, *sinks):
@@ -71,34 +75,35 @@ optimizer = tf.train.MomentumOptimizer(λ_learn, 0.9)
 # Train a statically-routed network.
 ################################################################################
 
-# print('\n —— Training statically-routed networks... ——\n')
-#
-# for n_tf in [3]:
-# # for n_tf in range(4):
-#     root = ReLin(512, LogReg())
-#     for i in reversed(range(n_tf)):
-#         root = ReConvMP(64 * 2**i, root)
-#     net = SRNet(x0_shape, y_shape, optimizer, root)
-#     name = 'Static Routing (n_tf=%i)' % n_tf
-#     desc = train(net, dataset, name=name, hypers=(lambda t: {t_train: t}))
-#     log['sr'].append({'n_tf': n_tf, 'net': desc})
+print('\n —— Training statically-routed networks... ——\n')
+
+for n_tf in range(4):
+    root = ReLin(512, LogReg())
+    for i in reversed(range(n_tf)):
+        root = ReConvMP(64 * 2**i, root)
+    root = Input(root)
+    net = SRNet(x0_shape, y_shape, optimizer, root)
+    name = 'Static Routing (n_tf=%i)' % n_tf
+    desc = train(net, dataset, name=name, hypers=(lambda t: {t_train: t}))
+    log['sr'].append({'n_tf': n_tf, 'net': desc})
 
 ################################################################################
 # Train decision smoothing cascades.
 ################################################################################
 
-# print('\n —— Training decision smoothing cascades... ——\n')
-#
-# for k_cpt in k_cpts:
-#     net = DSNet(x0_shape, y_shape, optimizer,
-#         ReConvMP(64, LogReg(),
-#             ReConvMP(128, LogReg(),
-#                 ReConvMP(256, LogReg(),
-#                     ReLin(512, LogReg())))))
-#     name = 'Decision Smoothing Cascade (k_cpt=%.1e)' % k_cpt
-#     desc = train(net, dataset, logging_period=1, name=name, hypers=(
-#         lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
-#     log['ds'].append({'k_cpt': k_cpt, 'net': desc})
+print('\n —— Training decision smoothing cascades... ——\n')
+
+for k_cpt in k_cpts:
+    net = DSNet(x0_shape, y_shape, optimizer,
+        Input(LogReg(),
+            ReConvMP(64, LogReg(),
+                ReConvMP(128, LogReg(),
+                    ReConvMP(256, LogReg(),
+                        ReLin(512, LogReg()))))))
+    name = 'Decision Smoothing Cascade (k_cpt=%.1e)' % k_cpt
+    desc = train(net, dataset, name=name, hypers=(
+        lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
+    log['ds'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
 # Train cost regressing cascades.
@@ -108,12 +113,13 @@ print('\n —— Training cost regression cascades... ——\n')
 
 for k_cpt in k_cpts:
     net = CRNet(x0_shape, y_shape, optimizer,
-        ReConvMP(64, LogReg(),
-            ReConvMP(128, LogReg(),
-                ReConvMP(256, LogReg(),
-                    ReLin(512, LogReg())))))
+        Input(LogReg(),
+            ReConvMP(64, LogReg(),
+                ReConvMP(128, LogReg(),
+                    ReConvMP(256, LogReg(),
+                        ReLin(512, LogReg()))))))
     name = 'Cost Regression Cascade (k_cpt=%.1e)' % k_cpt
-    desc = train(net, dataset, logging_period=1, name=name, hypers=(
+    desc = train(net, dataset, name=name, hypers=(
         lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
     log['cr'].append({'k_cpt': k_cpt, 'net': desc})
 
