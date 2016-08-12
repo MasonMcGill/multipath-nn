@@ -61,8 +61,6 @@ class DSNet(Net):
         self.k_cpt = tf.placeholder_with_default(0.0, ())
         self.k_l2 = tf.placeholder_with_default(0.0, ())
         self.ϵ = tf.placeholder_with_default(0.01, ())
-        c_mod = 0.0
-        lr_scales = {}
         def route_stat(ℓ, p_tr, p_ev):
             ℓ.p_tr = p_tr
             ℓ.p_ev = p_ev
@@ -74,19 +72,17 @@ class DSNet(Net):
             n_chan_in = np.prod(ℓ.x.get_shape().as_list()[1:])
             w_scale = 1 / np.sqrt(n_chan_in)
             w_shape = (n_chan_in, len(ℓ.sinks))
-            w = tf.Variable(w_scale * tf.random_normal(w_shape))
-            b = tf.Variable(tf.zeros(len(ℓ.sinks)))
+            ℓ.router.w = tf.Variable(w_scale * tf.random_normal(w_shape))
+            ℓ.router.b = tf.Variable(tf.zeros(len(ℓ.sinks)))
+            ℓ.router.c_mod = self.k_l2 * tf.reduce_sum(tf.square(ℓ.router.w))
             x_flat = tf.reshape(ℓ.x, (-1, n_chan_in))
-            s = tf.matmul(x_flat, w) + b
-            π_tr = tf.maximum(tf.nn.softmax(s), 0.1)
+            s = tf.matmul(x_flat, ℓ.router.w) + ℓ.router.b
+            π_tr = self.ϵ / len(ℓ.sinks) + (1 - self.ϵ) * tf.nn.softmax(s)
             π_ev = tf.to_float(tf.equal(
                 tf.expand_dims(tf.to_int32(tf.argmax(s, 1)), 1),
                 tf.range(len(ℓ.sinks))))
             for i, s in enumerate(ℓ.sinks):
                 route(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i])
-            nonlocal c_mod
-            c_mod += self.k_l2 * tf.reduce_sum(tf.square(w))
-            lr_scales[w] = 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
         def route(ℓ, p_tr, p_ev):
             if len(ℓ.sinks) < 2: route_stat(ℓ, p_tr, p_ev)
             else: route_dyn(ℓ, p_tr, p_ev)
@@ -94,13 +90,18 @@ class DSNet(Net):
         route(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)))
         c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.k_cpt * ℓ.n_ops for ℓ in self.layers)
-        c_mod += sum(ℓ.c_mod for ℓ in self.layers)
+        c_mod = sum(
+            tf.stop_gradient(ℓ.p_tr)
+            * (ℓ.c_mod + getattr(ℓ.router, 'c_mod', 0.0))
+            for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_mod
-        for ℓ in self.layers:
-            for p in vars(ℓ.params).values():
-                lr_scales[p] = 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
+        lr_scales = {
+            p: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
+            for ℓ in self.layers for p in [
+                *vars(ℓ.params).values(),
+                *vars(ℓ.router).values()]}
         grads = optimizer.compute_gradients(tf.reduce_mean(c_tr))
-        scaled_grads = [(lr_scales.get(p, 1.0) * g, p) for g, p in grads]
+        scaled_grads = [(lr_scales[p] * g, p) for g, p in grads]
         self._train_op = optimizer.apply_gradients(scaled_grads)
 
     def train(self, x0, y, hypers):
@@ -116,9 +117,7 @@ class CRNet(Net):
         self.k_cpt = tf.placeholder_with_default(0.0, ())
         self.k_l2 = tf.placeholder_with_default(0.0, ())
         self.k_cre = tf.placeholder_with_default(1e-3, ())
-        self.ϵ = tf.placeholder_with_default(0.1, ())
-        c_mod = 0.0
-        lr_scales = {}
+        self.ϵ = tf.placeholder_with_default(0.01, ())
         def route_stat(ℓ, p_tr, p_ev):
             ℓ.p_tr = p_tr
             ℓ.p_ev = p_ev
@@ -134,10 +133,11 @@ class CRNet(Net):
             n_chan_in = np.prod(ℓ.x.get_shape().as_list()[1:])
             w_scale = 1 / np.sqrt(n_chan_in)
             w_shape = (n_chan_in, len(ℓ.sinks))
-            w = tf.Variable(w_scale * tf.random_normal(w_shape))
-            b = tf.Variable(tf.zeros(len(ℓ.sinks)))
+            ℓ.router.w = tf.Variable(w_scale * tf.random_normal(w_shape))
+            ℓ.router.b = tf.Variable(tf.zeros(len(ℓ.sinks)))
+            ℓ.router.c_mod = self.k_l2 * tf.reduce_sum(tf.square(ℓ.router.w))
             x_flat = tf.reshape(ℓ.x, (-1, n_chan_in))
-            c_est = tf.matmul(x_flat, w) + b
+            c_est = tf.matmul(x_flat, ℓ.router.w) + ℓ.router.b
             π_ev = tf.to_float(tf.equal(
                 tf.expand_dims(tf.to_int32(tf.argmin(c_est, 1)), 1),
                 tf.range(len(ℓ.sinks))))
@@ -151,9 +151,6 @@ class CRNet(Net):
                 ℓ.c_err + self.k_cpt * ℓ.n_ops
                 + sum(π_ev[:, i] * s.c_ev
                       for i, s in enumerate(ℓ.sinks)))
-            nonlocal c_mod
-            c_mod += self.k_l2 * tf.reduce_sum(tf.square(w))
-            lr_scales[w] = 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
         def route(ℓ, p_tr, p_ev):
             if len(ℓ.sinks) < 2: route_stat(ℓ, p_tr, p_ev)
             else: route_dyn(ℓ, p_tr, p_ev)
@@ -162,11 +159,16 @@ class CRNet(Net):
         c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
-        c_mod += sum(ℓ.c_mod for ℓ in self.layers)
+        c_mod = sum(
+            tf.stop_gradient(ℓ.p_tr)
+            * (ℓ.c_mod + getattr(ℓ.router, 'c_mod', 0.0))
+            for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_cre + c_mod
-        for ℓ in self.layers:
-            for p in vars(ℓ.params).values():
-                lr_scales[p] = 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
+        lr_scales = {
+            p: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
+            for ℓ in self.layers for p in [
+                *vars(ℓ.params).values(),
+                *vars(ℓ.router).values()]}
         grads = optimizer.compute_gradients(tf.reduce_mean(c_tr))
         scaled_grads = [(lr_scales.get(p, 1.0) * g, p) for g, p in grads]
         self._train_op = optimizer.apply_gradients(scaled_grads)

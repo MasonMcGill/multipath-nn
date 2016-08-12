@@ -15,6 +15,7 @@ class Layer(metaclass=ABCMeta):
         full_hyper_dict = {**self.__class__.default_hypers, **hypers}
         self.hypers = Namespace(**full_hyper_dict)
         self.params = Namespace()
+        self.router = Namespace()
         self.sinks = sinks
 
     def link(self, sigs):
