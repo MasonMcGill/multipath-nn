@@ -5,7 +5,7 @@ from types import SimpleNamespace as Namespace
 import numpy as np
 import tensorflow as tf
 
-from lib.layers import Chain, LinTrans
+from lib.layers import BatchNorm, Chain, LinTrans, Rect
 
 ################################################################################
 # Optimization
@@ -75,15 +75,18 @@ def route_ds_stat(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
     ℓ.router = Chain({}, [])
-    ℓ.router.link(Namespace(x=ℓ.x))
+    ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     for s in ℓ.sinks:
         route_ds(s, ℓ.p_tr, ℓ.p_ev, opts)
 
 def route_ds_dyn(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    ℓ.router = LinTrans(dict(n_chan=len(ℓ.sinks), k_l2=opts.k_l2))
-    ℓ.router.link(Namespace(x=ℓ.x))
+    ℓ.router = Chain({},
+        sum(([LinTrans(dict(n_chan=n, k_l2=opts.k_l2)), BatchNorm({}), Rect({})]
+             for n in opts.arch), [])
+        + [LinTrans(dict(n_chan=len(ℓ.sinks), k_l2=opts.k_l2))])
+    ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     π_tr = (
         opts.ϵ / len(ℓ.sinks)
         + (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x))
@@ -98,13 +101,13 @@ def route_ds(ℓ, p_tr, p_ev, opts):
     else: route_ds_dyn(ℓ, p_tr, p_ev, opts)
 
 class DSNet(Net):
-    def __init__(self, x0_shape, y_shape, k_l2, optimizer, root):
+    def __init__(self, x0_shape, y_shape, arch, k_l2, optimizer, root):
         super().__init__(x0_shape, y_shape, root)
         self.k_cpt = tf.placeholder_with_default(0.0, ())
         self.ϵ = tf.placeholder_with_default(0.01, ())
         n_pts = tf.shape(self.x0)[0]
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
-                 Namespace(k_l2=k_l2, ϵ=self.ϵ))
+                 Namespace(arch=arch, k_l2=k_l2, ϵ=self.ϵ, mode=self.mode))
         c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
@@ -124,7 +127,7 @@ def route_cr_stat(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
     ℓ.router = Chain({}, [])
-    ℓ.router.link(Namespace(x=ℓ.x))
+    ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     for s in ℓ.sinks:
         route_cr(s, ℓ.p_tr, ℓ.p_ev, opts)
     ℓ.c_cre = 0.0
@@ -135,8 +138,11 @@ def route_cr_stat(ℓ, p_tr, p_ev, opts):
 def route_cr_dyn(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    ℓ.router = LinTrans(dict(n_chan=len(ℓ.sinks), k_l2=opts.k_l2))
-    ℓ.router.link(Namespace(x=ℓ.x))
+    ℓ.router = Chain({},
+        sum(([LinTrans(dict(n_chan=n, k_l2=opts.k_l2)), BatchNorm({}), Rect({})]
+             for n in opts.arch), [])
+        + [LinTrans(dict(n_chan=len(ℓ.sinks), k_l2=opts.k_l2))])
+    ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
@@ -156,15 +162,15 @@ def route_cr(ℓ, p_tr, p_ev, opts):
     else: route_cr_dyn(ℓ, p_tr, p_ev, opts)
 
 class CRNet(Net):
-    def __init__(self, x0_shape, y_shape, k_l2, optimizer, root):
+    def __init__(self, x0_shape, y_shape, arch, k_l2, optimizer, root):
         super().__init__(x0_shape, y_shape, root)
         self.k_cpt = tf.placeholder_with_default(0.0, ())
         self.k_cre = tf.placeholder_with_default(1e-3, ())
         self.ϵ = tf.placeholder_with_default(0.01, ())
         n_pts = tf.shape(self.x0)[0]
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
-                 Namespace(k_l2=k_l2, k_cpt=self.k_cpt,
-                           k_cre=self.k_cre, ϵ=self.ϵ))
+                 Namespace(arch=arch, k_l2=k_l2, k_cpt=self.k_cpt,
+                           k_cre=self.k_cre, ϵ=self.ϵ, mode=self.mode))
         c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
