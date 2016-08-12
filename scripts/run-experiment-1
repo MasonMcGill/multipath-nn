@@ -94,14 +94,14 @@ for n_tf in [3]:
 print('\n —— Training decision smoothing cascades... ——\n')
 
 for k_cpt in k_cpts:
-    net = DSNet(x0_shape, y_shape, optimizer,
+    net = DSNet(x0_shape, y_shape, k_l2, optimizer,
         Input(LogReg(),
             ReConvMP(32, LogReg(),
                 ReConvMP(64, LogReg(),
                     ReConvMP(128, LogReg())))))
     name = 'Decision Smoothing Cascade (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, name=name, hypers=(
-        lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
+        lambda t: {net.k_cpt: k_cpt, t_train: t}))
     log['ds_casc'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
@@ -111,14 +111,14 @@ for k_cpt in k_cpts:
 print('\n —— Training cost regression cascades... ——\n')
 
 for k_cpt in k_cpts:
-    net = CRNet(x0_shape, y_shape, optimizer,
+    net = CRNet(x0_shape, y_shape, k_l2, optimizer,
         Input(LogReg(),
             ReConvMP(32, LogReg(),
                 ReConvMP(64, LogReg(),
                     ReConvMP(128, LogReg())))))
     name = 'Cost Regression Cascade (k_cpt=%.1e)' % k_cpt
-    desc = train(net, dataset, name=name, hypers=(
-        lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
+    desc = train(net, dataset, logging_period=1, name=name, hypers=(
+        lambda t: {net.k_cpt: k_cpt, t_train: t}))
     log['cr_casc'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
@@ -128,7 +128,7 @@ for k_cpt in k_cpts:
 print('\n —— Training decision smoothing trees... ——\n')
 
 for k_cpt in k_cpts:
-    net = DSNet(x0_shape, y_shape, optimizer,
+    net = DSNet(x0_shape, y_shape, k_l2, optimizer,
         Input(LogReg(),
             ReConvMP(32, LogReg(),
                 ReConvMP(64, LogReg(),
@@ -146,7 +146,7 @@ for k_cpt in k_cpts:
                     ReConvMP(128, LogReg())))))
     name = 'Decision Smoothing Tree (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, name=name, hypers=(
-        lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
+        lambda t: {net.k_cpt: k_cpt, t_train: t}))
     log['ds_tree'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
@@ -156,7 +156,7 @@ for k_cpt in k_cpts:
 print('\n —— Training cost regression trees... ——\n')
 
 for k_cpt in k_cpts:
-    net = CRNet(x0_shape, y_shape, optimizer,
+    net = CRNet(x0_shape, y_shape, k_l2, optimizer,
         Input(LogReg(),
             ReConvMP(32, LogReg(),
                 ReConvMP(64, LogReg(),
@@ -174,7 +174,7 @@ for k_cpt in k_cpts:
                     ReConvMP(128, LogReg())))))
     name = 'Cost Regression Tree (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, logging_period=1, name=name, hypers=(
-        lambda t: {net.k_cpt: k_cpt, net.k_l2: k_l2, t_train: t}))
+        lambda t: {net.k_cpt: k_cpt, t_train: t}))
     log['cr_tree'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
