@@ -11,12 +11,12 @@ from lib.layers import BatchNorm, Chain, LinTrans, Rect
 # Optimization
 ################################################################################
 
-def minimize_expected(net, cost, optimizer):
+def minimize_expected(net, cost, optimizer, lr_routing_scale=1.0):
     lr_scales = {
-        param: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
-        for ℓ in net.layers for param in [
-            *vars(ℓ.params).values(),
-            *vars(ℓ.router.params).values()]}
+        **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
+           for ℓ in self.layers for θ in vars(ℓ.params).values()},
+        **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr))) * lr_routing_scale
+           for ℓ in self.layers for θ in vars(ℓ.router.params).values()}}
     grads = optimizer.compute_gradients(cost)
     scaled_grads = [(lr_scales[p] * g, p) for g, p in grads]
     return optimizer.apply_gradients(scaled_grads)
@@ -139,9 +139,10 @@ def route_cr_dyn(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
     ℓ.router = Chain({},
-        sum(([LinTrans(dict(n_chan=n, k_l2=opts.k_l2)), BatchNorm({}), Rect({})]
+        sum(([LinTrans(dict(n_chan=n, k_l2=(opts.k_cre * opts.k_l2))),
+              BatchNorm({}), Rect({})]
              for n in opts.arch), [])
-        + [LinTrans(dict(n_chan=len(ℓ.sinks), k_l2=opts.k_l2))])
+        + [LinTrans(dict(n_chan=len(ℓ.sinks), k_l2=(opts.k_cre * opts.k_l2)))])
     ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
@@ -150,7 +151,7 @@ def route_cr_dyn(ℓ, p_tr, p_ev, opts):
     for i, s in enumerate(ℓ.sinks):
         route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
     ℓ.c_cre = opts.k_cre * sum(
-        π_tr[:, i] * tf.square(tf.stop_gradient(s.c_ev) - ℓ.router.x[:, i])
+        π_tr[:, i] * tf.square(ℓ.router.x[:, i] - tf.stop_gradient(s.c_ev))
         for i, s in enumerate(ℓ.sinks))
     ℓ.c_ev = (
         ℓ.c_err + opts.k_cpt * ℓ.n_ops
@@ -166,7 +167,7 @@ class CRNet(Net):
         super().__init__(x0_shape, y_shape, root)
         self.k_cpt = tf.placeholder_with_default(0.0, ())
         self.k_cre = tf.placeholder_with_default(1e-3, ())
-        self.ϵ = tf.placeholder_with_default(0.01, ())
+        self.ϵ = tf.placeholder_with_default(0.5, ())
         n_pts = tf.shape(self.x0)[0]
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(arch=arch, k_l2=k_l2, k_cpt=self.k_cpt,
@@ -177,7 +178,7 @@ class CRNet(Net):
         c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_cre + c_mod
         self._train_op = minimize_expected(
-            self, tf.reduce_mean(c_tr), optimizer)
+            self, tf.reduce_mean(c_tr), optimizer, 1 / self.k_cre)
 
     def train(self, x0, y, hypers):
         self._train_op.run({self.x0: x0, self.y: y, self.mode: 'tr', **hypers})

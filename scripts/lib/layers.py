@@ -42,9 +42,9 @@ class LogReg(Layer):
         b = tf.Variable(tf.zeros(n_cls))
         x_flat = tf.reshape(sigs.x, (-1, n_chan_in))
         self.x = tf.nn.softmax(tf.matmul(x_flat, w) + b)
-        p_cls = ϵ / n_cls + (1 - ϵ) * self.x
+        # p_cls = ϵ / n_cls + (1 - ϵ) * self.x
         # self.c_err = -tf.reduce_sum(sigs.y * tf.log(p_cls), 1)
-        self.c_err = tf.reduce_sum(tf.square(p_cls - sigs.y), 1)
+        self.c_err = tf.reduce_sum(tf.square(self.x - sigs.y), 1)
         self.c_mod = k_l2 * tf.reduce_sum(tf.square(w))
         self.params = Namespace(w=w, b=b)
 
