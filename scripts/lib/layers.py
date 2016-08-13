@@ -129,6 +129,15 @@ class SquaredError(Layer):
         super().link(sigs)
         self.c_err = tf.reduce_sum(tf.square(sigs.x - sigs.y), 1)
 
+class CrossEntropyError(Layer):
+    default_hypers = dict(ϵ=0.1)
+
+    def link(self, sigs):
+        super().link(sigs)
+        n_cls = sigs.y.get_shape()[1].value
+        p_cls = self.hypers.ϵ / n_cls + (1 - self.hypers.ϵ) * sigs.x
+        self.c_err = -tf.reduce_sum(sigs.y * p_cls, 1)
+
 ################################################################################
 # Compound Layers
 ################################################################################
