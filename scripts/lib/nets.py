@@ -27,7 +27,7 @@ def minimize_expected(net, cost, optimizer, lr_routing_scale=1.0):
         **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr))) * lr_routing_scale
            for ℓ in net.layers for θ in vars(ℓ.router.params).values()}}
     grads = optimizer.compute_gradients(cost)
-    scaled_grads = [(lr_scales[p] * g, p) for g, p in grads]
+    scaled_grads = [(lr_scales[θ] * g, θ) for g, θ in grads]
     return optimizer.apply_gradients(scaled_grads)
 
 ################################################################################
@@ -140,10 +140,13 @@ def route_cr_stat(ℓ, p_tr, p_ev, opts):
     ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     for s in ℓ.sinks:
         route_cr(s, ℓ.p_tr, ℓ.p_ev, opts)
-    ℓ.c_cre = 0.0
     ℓ.c_ev = (
         ℓ.c_err + opts.k_cpt * ℓ.n_ops
         + sum(s.c_ev for s in ℓ.sinks))
+    ℓ.c_opt = (
+        ℓ.c_err + opts.k_cpt * ℓ.n_ops
+        + sum(s.c_opt for s in ℓ.sinks))
+    ℓ.c_cre = 0.0
 
 def route_cr_dyn(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
@@ -156,20 +159,32 @@ def route_cr_dyn(ℓ, p_tr, p_ev, opts):
     π_tr = opts.ϵ / len(ℓ.sinks) + (1 - opts.ϵ) * π_ev
     for i, s in enumerate(ℓ.sinks):
         route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
-    ℓ.c_cre = opts.k_cre * sum(
-        π_tr[:, i] * tf.square(ℓ.router.x[:, i] - tf.stop_gradient(s.c_ev))
-        for i, s in enumerate(ℓ.sinks))
     ℓ.c_ev = (
         ℓ.c_err + opts.k_cpt * ℓ.n_ops
         + sum(π_ev[:, i] * s.c_ev
               for i, s in enumerate(ℓ.sinks)))
+    ℓ.c_opt = (
+        ℓ.c_err + opts.k_cpt * ℓ.n_ops
+        + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
+    if opts.optimistic:
+        ℓ.c_cre = opts.k_cre * sum(
+            π_tr[:, i] * tf.square(
+                ℓ.router.x[:, i] - tf.stop_gradient(s.c_opt))
+            for i, s in enumerate(ℓ.sinks))
+    else:
+        ℓ.c_cre = opts.k_cre * sum(
+            π_tr[:, i] * tf.square(
+                ℓ.router.x[:, i] - tf.stop_gradient(s.c_ev))
+            for i, s in enumerate(ℓ.sinks))
 
 def route_cr(ℓ, p_tr, p_ev, opts):
     if len(ℓ.sinks) < 2: route_cr_stat(ℓ, p_tr, p_ev, opts)
     else: route_cr_dyn(ℓ, p_tr, p_ev, opts)
 
 class CRNet(Net):
-    default_hypers = dict(arch=[], k_cpt=0.0, k_cre=1e-3, k_l2=0.0, ϵ=0.01)
+    default_hypers = dict(
+        arch=[], k_cpt=0.0, k_cre=1e-3, k_l2=0.0, ϵ=0.1,
+        optimistic=False)
 
     def __init__(self, x0_shape, y_shape, optimizer, hypers, root):
         super().__init__(x0_shape, y_shape, hypers, root)
