@@ -9,8 +9,9 @@ from os import makedirs
 import tensorflow as tf
 
 from lib.data import Dataset
-from lib.layers import BatchNorm, Chain, Conv, Layer, MaxPool, Rect
-from lib.layers import LogReg as LibLogReg
+from lib.layers import (
+    BatchNorm, Chain, Conv, Layer, LinTrans,
+    MaxPool, Rect, Softmax, SquaredError)
 from lib.nets import CRNet, DSNet, SRNet
 from lib.training import train
 
@@ -61,7 +62,9 @@ class ReLin(Chain):
 
 class LogReg(Chain):
     def __init__(self):
-        super().__init__({}, [LibLogReg({'k_l2': k_l2})])
+        super().__init__({}, [
+            LinTrans({'n_chan': y_shape[0], 'k_l2': k_l2}),
+            Softmax({}), SquaredError({})])
 
 ################################################################################
 # Define an optimizer.
@@ -94,14 +97,15 @@ for n_tf in [3]:
 print('\n —— Training decision smoothing cascades... ——\n')
 
 for k_cpt in k_cpts:
-    net = DSNet(x0_shape, y_shape, [16], k_l2, optimizer,
+    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2)
+    net = DSNet(x0_shape, y_shape, optimizer, hypers,
         Input(LogReg(),
             ReConvMP(32, LogReg(),
                 ReConvMP(64, LogReg(),
                     ReConvMP(128, LogReg())))))
     name = 'Decision Smoothing Cascade (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, logging_period=1, name=name, hypers=(
-        lambda t: {net.k_cpt: k_cpt, t_train: t}))
+        lambda t: {t_train: t}))
     log['ds_casc'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
@@ -111,14 +115,15 @@ for k_cpt in k_cpts:
 print('\n —— Training cost regression cascades... ——\n')
 
 for k_cpt in k_cpts:
-    net = CRNet(x0_shape, y_shape, [16], k_l2, optimizer,
+    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2)
+    net = CRNet(x0_shape, y_shape, optimizer, hypers,
         Input(LogReg(),
             ReConvMP(32, LogReg(),
                 ReConvMP(64, LogReg(),
                     ReConvMP(128, LogReg())))))
     name = 'Cost Regression Cascade (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, logging_period=1, name=name, hypers=(
-        lambda t: {net.k_cpt: k_cpt, t_train: t}))
+        lambda t: {t_train: t}))
     log['cr_casc'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
@@ -128,7 +133,8 @@ for k_cpt in k_cpts:
 print('\n —— Training decision smoothing trees... ——\n')
 
 for k_cpt in k_cpts:
-    net = DSNet(x0_shape, y_shape, [16], k_l2, optimizer,
+    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2)
+    net = DSNet(x0_shape, y_shape, optimizer, hypers,
         Input(LogReg(),
             ReConvMP(32, LogReg(),
                 ReConvMP(64, LogReg(),
@@ -145,8 +151,8 @@ for k_cpt in k_cpts:
                     ReConvMP(128, LogReg()),
                     ReConvMP(128, LogReg())))))
     name = 'Decision Smoothing Tree (k_cpt=%.1e)' % k_cpt
-    desc = train(net, dataset, name=name, hypers=(
-        lambda t: {net.k_cpt: k_cpt, t_train: t}))
+    desc = train(net, dataset, logging_period=1, name=name, hypers=(
+        lambda t: {t_train: t}))
     log['ds_tree'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################
@@ -156,7 +162,8 @@ for k_cpt in k_cpts:
 print('\n —— Training cost regression trees... ——\n')
 
 for k_cpt in k_cpts:
-    net = CRNet(x0_shape, y_shape, [16], k_l2, optimizer,
+    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2)
+    net = CRNet(x0_shape, y_shape, optimizer, hypers,
         Input(LogReg(),
             ReConvMP(32, LogReg(),
                 ReConvMP(64, LogReg(),
@@ -173,8 +180,8 @@ for k_cpt in k_cpts:
                     ReConvMP(128, LogReg()),
                     ReConvMP(128, LogReg())))))
     name = 'Cost Regression Tree (k_cpt=%.1e)' % k_cpt
-    desc = train(net, dataset, name=name, hypers=(
-        lambda t: {net.k_cpt: k_cpt, t_train: t}))
+    desc = train(net, dataset, logging_period=5, name=name, hypers=(
+        lambda t: {t_train: t}))
     log['cr_tree'].append({'k_cpt': k_cpt, 'net': desc})
 
 ################################################################################

@@ -8,15 +8,24 @@ import tensorflow as tf
 from lib.layers import BatchNorm, Chain, LinTrans, Rect
 
 ################################################################################
+# Routing Layers
+################################################################################
+
+def router(n_act, arch, k_l2):
+    return Chain({},
+        sum(([LinTrans(dict(n_chan=n, k_l2=k_l2)), BatchNorm({}), Rect({})]
+             for n in arch), []) + [LinTrans(dict(n_chan=n_act, k_l2=k_l2))])
+
+################################################################################
 # Optimization
 ################################################################################
 
 def minimize_expected(net, cost, optimizer, lr_routing_scale=1.0):
     lr_scales = {
         **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
-           for ℓ in self.layers for θ in vars(ℓ.params).values()},
+           for ℓ in net.layers for θ in vars(ℓ.params).values()},
         **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr))) * lr_routing_scale
-           for ℓ in self.layers for θ in vars(ℓ.router.params).values()}}
+           for ℓ in net.layers for θ in vars(ℓ.router.params).values()}}
     grads = optimizer.compute_gradients(cost)
     scaled_grads = [(lr_scales[p] * g, p) for g, p in grads]
     return optimizer.apply_gradients(scaled_grads)
@@ -26,7 +35,11 @@ def minimize_expected(net, cost, optimizer, lr_routing_scale=1.0):
 ################################################################################
 
 class Net(metaclass=ABCMeta):
-    def __init__(self, x0_shape, y_shape, root):
+    default_hypers = {}
+
+    def __init__(self, x0_shape, y_shape, hypers, root):
+        full_hyper_dict = {**self.__class__.default_hypers, **hypers}
+        self.hypers = Namespace(**full_hyper_dict)
         self.x0 = tf.placeholder(tf.float32, (None,) + x0_shape)
         self.y = tf.placeholder(tf.float32, (None,) + y_shape)
         self.mode = tf.placeholder_with_default('ev', ())
@@ -58,7 +71,7 @@ class Net(metaclass=ABCMeta):
 
 class SRNet(Net):
     def __init__(self, x0_shape, y_shape, optimizer, root):
-        super().__init__(x0_shape, y_shape, root)
+        super().__init__(x0_shape, y_shape, {}, root)
         for ℓ in self.layers:
             ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
         c_tr = sum(ℓ.c_err + ℓ.c_mod for ℓ in self.layers)
@@ -82,10 +95,7 @@ def route_ds_stat(ℓ, p_tr, p_ev, opts):
 def route_ds_dyn(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    ℓ.router = Chain({},
-        sum(([LinTrans(dict(n_chan=n, k_l2=opts.k_l2)), BatchNorm({}), Rect({})]
-             for n in opts.arch), [])
-        + [LinTrans(dict(n_chan=len(ℓ.sinks), k_l2=opts.k_l2))])
+    ℓ.router = router(len(ℓ.sinks), opts.arch, opts.k_l2)
     ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     π_tr = (
         opts.ϵ / len(ℓ.sinks)
@@ -101,15 +111,15 @@ def route_ds(ℓ, p_tr, p_ev, opts):
     else: route_ds_dyn(ℓ, p_tr, p_ev, opts)
 
 class DSNet(Net):
-    def __init__(self, x0_shape, y_shape, arch, k_l2, optimizer, root):
-        super().__init__(x0_shape, y_shape, root)
-        self.k_cpt = tf.placeholder_with_default(0.0, ())
-        self.ϵ = tf.placeholder_with_default(0.01, ())
+    default_hypers = dict(arch=[], k_cpt=0.0, k_l2=0.0, ϵ=0.01)
+
+    def __init__(self, x0_shape, y_shape, optimizer, hypers, root):
+        super().__init__(x0_shape, y_shape, hypers, root)
         n_pts = tf.shape(self.x0)[0]
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
-                 Namespace(arch=arch, k_l2=k_l2, ϵ=self.ϵ, mode=self.mode))
+                 Namespace(mode=self.mode, **vars(self.hypers)))
         c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
-        c_cpt = sum(ℓ.p_tr * self.k_cpt * ℓ.n_ops for ℓ in self.layers)
+        c_cpt = sum(ℓ.p_tr * self.hypers.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
                     for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_mod
@@ -138,11 +148,7 @@ def route_cr_stat(ℓ, p_tr, p_ev, opts):
 def route_cr_dyn(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    ℓ.router = Chain({},
-        sum(([LinTrans(dict(n_chan=n, k_l2=(opts.k_cre * opts.k_l2))),
-              BatchNorm({}), Rect({})]
-             for n in opts.arch), [])
-        + [LinTrans(dict(n_chan=len(ℓ.sinks), k_l2=(opts.k_cre * opts.k_l2)))])
+    ℓ.router = router(len(ℓ.sinks), opts.arch, opts.k_l2)
     ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
@@ -163,22 +169,20 @@ def route_cr(ℓ, p_tr, p_ev, opts):
     else: route_cr_dyn(ℓ, p_tr, p_ev, opts)
 
 class CRNet(Net):
-    def __init__(self, x0_shape, y_shape, arch, k_l2, optimizer, root):
-        super().__init__(x0_shape, y_shape, root)
-        self.k_cpt = tf.placeholder_with_default(0.0, ())
-        self.k_cre = tf.placeholder_with_default(1e-3, ())
-        self.ϵ = tf.placeholder_with_default(0.5, ())
+    default_hypers = dict(arch=[], k_cpt=0.0, k_cre=1e-3, k_l2=0.0, ϵ=0.01)
+
+    def __init__(self, x0_shape, y_shape, optimizer, hypers, root):
+        super().__init__(x0_shape, y_shape, hypers, root)
         n_pts = tf.shape(self.x0)[0]
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
-                 Namespace(arch=arch, k_l2=k_l2, k_cpt=self.k_cpt,
-                           k_cre=self.k_cre, ϵ=self.ϵ, mode=self.mode))
+                 Namespace(mode=self.mode, **vars(self.hypers)))
         c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
-        c_cpt = sum(ℓ.p_tr * self.k_cpt * ℓ.n_ops for ℓ in self.layers)
+        c_cpt = sum(ℓ.p_tr * self.hypers.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
         c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_cre + c_mod
         self._train_op = minimize_expected(
-            self, tf.reduce_mean(c_tr), optimizer, 1 / self.k_cre)
+            self, tf.reduce_mean(c_tr), optimizer, 1 / self.hypers.k_cre)
 
     def train(self, x0, y, hypers):
         self._train_op.run({self.x0: x0, self.y: y, self.mode: 'tr', **hypers})

@@ -25,30 +25,6 @@ class Layer(metaclass=ABCMeta):
         self.n_ops = 0
 
 ################################################################################
-# Regression Layers
-################################################################################
-
-class LogReg(Layer):
-    default_hypers = dict(k_l2=0, ϵ=1e-6)
-
-    def link(self, sigs):
-        super().link(sigs)
-        k_l2, ϵ = self.hypers.k_l2, self.hypers.ϵ
-        n_cls = sigs.y.get_shape()[1].value
-        n_chan_in = np.prod(sigs.x.get_shape().as_list()[1:])
-        w_shape = (n_chan_in, n_cls)
-        w_scale = 1 / np.sqrt(n_chan_in)
-        w = tf.Variable(w_scale * tf.random_normal(w_shape))
-        b = tf.Variable(tf.zeros(n_cls))
-        x_flat = tf.reshape(sigs.x, (-1, n_chan_in))
-        self.x = tf.nn.softmax(tf.matmul(x_flat, w) + b)
-        # p_cls = ϵ / n_cls + (1 - ϵ) * self.x
-        # self.c_err = -tf.reduce_sum(sigs.y * tf.log(p_cls), 1)
-        self.c_err = tf.reduce_sum(tf.square(self.x - sigs.y), 1)
-        self.c_mod = k_l2 * tf.reduce_sum(tf.square(w))
-        self.params = Namespace(w=w, b=b)
-
-################################################################################
 # Transformation Layers
 ################################################################################
 
@@ -92,6 +68,11 @@ class Rect(Layer):
     def link(self, sigs):
         super().link(sigs)
         self.x = tf.nn.relu(sigs.x)
+
+class Softmax(Layer):
+    def link(self, sigs):
+        super().link(sigs)
+        self.x = tf.nn.softmax(sigs.x)
 
 class MaxPool(Layer):
     default_hypers = dict(stride=1, supp=1)
@@ -138,6 +119,15 @@ class BatchNorm(Layer):
         self.x = tf.cond(tf.equal(sigs.mode, 'tr'),
             lambda: x_tr, lambda: x_ev)
         self.params = Namespace(γ=γ, β=β)
+
+################################################################################
+# Error Layers
+################################################################################
+
+class SquaredError(Layer):
+    def link(self, sigs):
+        super().link(sigs)
+        self.c_err = tf.reduce_sum(tf.square(sigs.x - sigs.y), 1)
 
 ################################################################################
 # Compound Layers

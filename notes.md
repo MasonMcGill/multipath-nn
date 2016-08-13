@@ -7,12 +7,11 @@
 # Experiments
 
 - Static routing vs. dynamic routing (experiment 1)
-- Decision smoothing vs. cost regression (experiment 2)
-- Trees vs. cascades (experiment 3)
+- Decision smoothing vs. cost regression (experiment 1)
+- Trees vs. cascades (experiment 1)
 - Smart routing vs. dumb routing (test informally)
 - Optimistic vs. pragmatic cost regression (test informally)
 - Generalization error estimation (test informally)
-- Pretraining vs. no pretraining (test informally)
-- Growing vs. planting (experiment 4)
-- Subsignal routing (experiment 5)
-- Spiking (experiment 6)
+- Subsignal routing (experiment 2)
+- Spiking (experiment 3)
+- Growing vs. planting (possible follow-up study)
