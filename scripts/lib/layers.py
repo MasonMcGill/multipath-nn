@@ -130,7 +130,7 @@ class SquaredError(Layer):
         self.c_err = tf.reduce_sum(tf.square(sigs.x - sigs.y), 1)
 
 class CrossEntropyError(Layer):
-    default_hypers = dict(ϵ=0.1)
+    default_hypers = dict(ϵ=1e-6)
 
     def link(self, sigs):
         super().link(sigs)
