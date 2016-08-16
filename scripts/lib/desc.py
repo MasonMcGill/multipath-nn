@@ -15,14 +15,6 @@ def p_inc(net, ℓ):
     δ_inc = tf.not_equal(tf.argmax(ℓ.x, 1), tf.argmax(net.y, 1))
     return ℓ.p_ev * tf.to_float(δ_inc)
 
-def x_ent(net, ℓ, ϵ=1e-6):
-    n_cls = net.y.get_shape()[1].value
-    p_cls = ϵ / n_cls + (1 - ϵ) * ℓ.x
-    return ℓ.p_ev * -tf.reduce_sum(net.y * tf.log(p_cls), 1)
-
-def mse(net, ℓ):
-    return ℓ.p_ev * tf.reduce_sum(tf.square(ℓ.x - net.y), 1)
-
 def moc(net, ℓ):
     return ℓ.p_ev * ℓ.n_ops
 
@@ -30,8 +22,6 @@ def state_tensors(net):
     return {**{('p_cor', ℓ): p_cor(net, ℓ) for ℓ in net.leaves},
             **{('p_inc', ℓ): p_inc(net, ℓ) for ℓ in net.leaves},
             'acc': sum(p_cor(net, ℓ) for ℓ in net.leaves),
-            'mxe': sum(x_ent(net, ℓ) for ℓ in net.leaves),
-            'mse': sum(mse(net, ℓ) for ℓ in net.leaves),
             'moc': sum(moc(net, ℓ) for ℓ in net.layers)}
 
 def mean_net_state(sess, net, batches):
@@ -63,8 +53,6 @@ def net_desc(sess, net, dataset):
     ms_tr = mean_net_state(sess, net, dataset.training_batches())
     ms_ts = mean_net_state(sess, net, dataset.test_batches())
     return {'acc_tr': ms_tr['acc'], 'acc_ts': ms_ts['acc'],
-            'mxe_tr': ms_tr['mxe'], 'mxe_ts': ms_ts['mxe'],
-            'mse_tr': ms_tr['mse'], 'mse_ts': ms_ts['mse'],
             'moc_tr': ms_tr['moc'], 'moc_ts': ms_ts['moc'],
             'root': layer_desc(ms_tr, ms_ts, net.root)}
 
