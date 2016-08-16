@@ -92,11 +92,7 @@ class Dropout(Layer):
 
     def link(self, sigs):
         super().link(sigs)
-        if self.hypers.λ != 1:
-            mask = tf.less(tf.random_uniform(tf.shape(sigs.x)), self.hypers.λ)
-            x_drop = tf.to_float(mask) * sigs.x / self.hypers.λ
-            self.x = tf.cond(tf.equal(sigs.mode, 'tr'),
-                lambda: x_drop, lambda: sigs.x)
+        self.x = tf.nn.dropout(sigs.x, self.hypers.λ)
 
 class BatchNorm(Layer):
     default_hypers = dict(d=0.9, ϵ=1e-6)
