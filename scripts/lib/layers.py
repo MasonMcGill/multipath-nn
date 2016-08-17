@@ -20,9 +20,9 @@ class Layer(metaclass=ABCMeta):
 
     def link(self, sigs):
         self.x = sigs.x
-        self.c_err = 0
-        self.c_mod = 0
-        self.n_ops = 0
+        self.c_err = tf.zeros(tf.shape(sigs.x)[:1])
+        self.c_mod = tf.zeros(tf.shape(sigs.x)[:1])
+        self.n_ops = tf.zeros(tf.shape(sigs.x)[:1])
 
 ################################################################################
 # Transformation Layers

@@ -19,7 +19,7 @@ from lib.training import train
 # Load data.
 ################################################################################
 
-dataset = Dataset('data/cifar-10-lln.mat')
+dataset = Dataset('data/cifar-10-lln.mat', n_vl=1280)
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
 
@@ -27,7 +27,7 @@ y_shape = dataset.y_shape
 # Define network hyperparameters.
 ################################################################################
 
-k_cpts = [0]# + [4**i * 1e-10 for i in range(7)]
+k_cpts = [3e-9]# + [4**i * 1e-10 for i in range(7)]
 k_l2 = 1e-3
 
 ################################################################################

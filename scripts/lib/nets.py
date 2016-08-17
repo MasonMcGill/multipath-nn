@@ -21,13 +21,14 @@ def router(n_act, arch, k_l2):
 ################################################################################
 
 def minimize_expected(net, cost, optimizer, lr_routing_scale=1.0):
+    # To-do: allow specifying routing distribution
     lr_scales = {
         **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
            for ℓ in net.layers for θ in vars(ℓ.params).values()},
         **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr))) * lr_routing_scale
            for ℓ in net.layers for θ in vars(ℓ.router.params).values()}}
     grads = optimizer.compute_gradients(cost)
-    scaled_grads = [(lr_scales[θ] * g, θ) for g, θ in grads]
+    scaled_grads = [(lr_scales[θ] * g, θ) for g, θ in grads if g is not None]
     return optimizer.apply_gradients(scaled_grads)
 
 ################################################################################
@@ -63,6 +64,9 @@ class Net(metaclass=ABCMeta):
         return (ℓ for ℓ in self.layers if len(ℓ.sinks) == 0)
 
     def train(self, x0, y, hypers):
+        pass
+
+    def validate(self, x0, y, hypers):
         pass
 
 ################################################################################
@@ -109,6 +113,11 @@ def route_ds_dyn(ℓ, p_tr, p_ev, opts):
 def route_ds(ℓ, p_tr, p_ev, opts):
     if len(ℓ.sinks) < 2: route_ds_stat(ℓ, p_tr, p_ev, opts)
     else: route_ds_dyn(ℓ, p_tr, p_ev, opts)
+    ℓ.params.μ_tr = tf.Variable(0.0)
+    ℓ.params.μ_vl = tf.Variable(0.0)
+    ℓ.c_μ_tr = tf.square(ℓ.params.μ_tr - tf.stop_gradient(ℓ.c_err))
+    ℓ.c_μ_vl = tf.square(ℓ.params.μ_vl - tf.stop_gradient(ℓ.c_err))
+    ℓ.c_gen = tf.stop_gradient(ℓ.params.μ_vl - ℓ.params.μ_tr)
 
 class DSNet(Net):
     default_hypers = dict(arch=[], k_cpt=0.0, k_l2=0.0, ϵ=0.01)
@@ -119,15 +128,23 @@ class DSNet(Net):
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(mode=self.mode, **vars(self.hypers)))
         c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
+        c_gen = sum(ℓ.p_tr * ℓ.c_gen for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.hypers.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
                     for ℓ in self.layers)
-        c_tr = c_err + c_cpt + c_mod
+        c_μ_tr = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_μ_tr for ℓ in self.layers)
+        c_μ_vl = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_μ_vl for ℓ in self.layers)
+        c_tr = c_err + c_gen + c_cpt + c_mod + c_μ_tr
         self._train_op = minimize_expected(
             self, tf.reduce_mean(c_tr), optimizer)
+        self._validate_op = minimize_expected(
+            self, tf.reduce_mean(c_μ_vl), optimizer)
 
     def train(self, x0, y, hypers):
         self._train_op.run({self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
+
+    def validate(self, x0, y, hypers):
+        self._validate_op.run({self.x0: x0, self.y: y, **hypers})
 
 ################################################################################
 # Cost Regression Networks
@@ -180,6 +197,11 @@ def route_cr_dyn(ℓ, p_tr, p_ev, opts):
 def route_cr(ℓ, p_tr, p_ev, opts):
     if len(ℓ.sinks) < 2: route_cr_stat(ℓ, p_tr, p_ev, opts)
     else: route_cr_dyn(ℓ, p_tr, p_ev, opts)
+    ℓ.params.μ_tr = tf.Variable(0.0)
+    ℓ.params.μ_vl = tf.Variable(0.0)
+    ℓ.c_μ_tr = tf.square(ℓ.params.μ_tr - tf.stop_gradient(ℓ.c_err))
+    ℓ.c_μ_vl = tf.square(ℓ.params.μ_vl - tf.stop_gradient(ℓ.c_err))
+    ℓ.c_gen = tf.stop_gradient(ℓ.params.μ_vl - ℓ.params.μ_tr)
 
 class CRNet(Net):
     default_hypers = dict(
@@ -192,12 +214,20 @@ class CRNet(Net):
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(mode=self.mode, **vars(self.hypers)))
         c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
+        c_gen = sum(ℓ.p_tr * ℓ.c_gen for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.hypers.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
         c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
-        c_tr = c_err + c_cpt + c_cre + c_mod
+        c_μ_tr = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_μ_tr for ℓ in self.layers)
+        c_μ_vl = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_μ_vl for ℓ in self.layers)
+        c_tr = c_err + c_gen + c_cpt + c_cre + c_mod + c_μ_tr
         self._train_op = minimize_expected(
             self, tf.reduce_mean(c_tr), optimizer, 1 / self.hypers.k_cre)
+        self._validate_op = minimize_expected(
+            self, tf.reduce_mean(c_μ_vl), optimizer)
 
     def train(self, x0, y, hypers):
         self._train_op.run({self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
+
+    def validate(self, x0, y, hypers):
+        self._validate_op.run({self.x0: x0, self.y: y, **hypers})
