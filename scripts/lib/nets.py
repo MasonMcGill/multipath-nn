@@ -68,6 +68,9 @@ class Net(metaclass=ABCMeta):
     def validate(self, x0, y, hypers):
         pass
 
+    def eval(self, target, x0, y, hypers):
+        pass
+
 ################################################################################
 # Statically-Routed Networks
 ################################################################################
@@ -79,9 +82,19 @@ class SRNet(Net):
             ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
         c_tr = sum(ℓ.c_err + ℓ.c_mod for ℓ in self.layers)
         self._train_op = optimizer.minimize(tf.reduce_mean(c_tr))
+        self._sess = tf.Session()
+        self._sess.run(tf.initialize_all_variables())
+
+    def __del__(self):
+        self._sess.close()
 
     def train(self, x0, y, hypers):
-        self._train_op.run({self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
+        self._sess.run(self._train_op, {
+            self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
+
+    def eval(self, target, x0, y, hypers):
+        return self._sess.run(target, {
+            self.x0: x0, self.y: y, **hypers})
 
 ################################################################################
 # Decision Smoothing Networks
@@ -138,12 +151,23 @@ class DSNet(Net):
             self, tf.reduce_mean(c_tr), optimizer)
         self._validate_op = minimize_expected(
             self, tf.reduce_mean(c_μ_vl), optimizer)
+        self._sess = tf.Session()
+        self._sess.run(tf.initialize_all_variables())
+
+    def __del__(self):
+        self._sess.close()
 
     def train(self, x0, y, hypers):
-        self._train_op.run({self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
+        self._sess.run(self._train_op, {
+            self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
 
     def validate(self, x0, y, hypers):
-        self._validate_op.run({self.x0: x0, self.y: y, **hypers})
+        self._sess.run(self._validate_op, {
+            self.x0: x0, self.y: y, **hypers})
+
+    def eval(self, target, x0, y, hypers):
+        return self._sess.run(target, {
+            self.x0: x0, self.y: y, **hypers})
 
 ################################################################################
 # Cost Regression Networks
@@ -223,9 +247,20 @@ class CRNet(Net):
             self, tf.reduce_mean(c_tr), optimizer, 1 / self.hypers.k_cre)
         self._validate_op = minimize_expected(
             self, tf.reduce_mean(c_μ_vl), optimizer)
+        self._sess = tf.Session()
+        self._sess.run(tf.initialize_all_variables())
+
+    def __del__(self):
+        self._sess.close()
 
     def train(self, x0, y, hypers):
-        self._train_op.run({self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
+        self._sess.run(self._train_op, {
+            self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
 
     def validate(self, x0, y, hypers):
-        self._validate_op.run({self.x0: x0, self.y: y, **hypers})
+        self._sess.run(self._validate_op, {
+            self.x0: x0, self.y: y, **hypers})
+
+    def eval(self, target, x0, y, hypers):
+        return self._sess.run(target, {
+            self.x0: x0, self.y: y, **hypers})

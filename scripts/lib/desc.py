@@ -24,12 +24,12 @@ def state_tensors(net):
             'acc': sum(p_cor(net, ℓ) for ℓ in net.leaves),
             'moc': sum(moc(net, ℓ) for ℓ in net.layers)}
 
-def mean_net_state(sess, net, batches):
+def mean_net_state(net, batches):
     tensors = state_tensors(net)
     sums = {k: 0 for k in tensors.keys()}
     count = 0
     for x0, y in batches:
-        samples = sess.run(tensors, {net.x0: x0, net.y: y})
+        samples = net.eval(tensors, x0, y, {})
         for k in tensors.keys():
             sums[k] += np.sum(samples[k], 0)
         count += len(x0)
@@ -49,9 +49,9 @@ def layer_desc(ms_tr, ms_ts, ℓ):
             'sinks': [layer_desc(ms_tr, ms_ts, s)
                       for s in ℓ.sinks]}
 
-def net_desc(sess, net, dataset):
-    ms_tr = mean_net_state(sess, net, dataset.training_batches())
-    ms_ts = mean_net_state(sess, net, dataset.test_batches())
+def net_desc(net, dataset):
+    ms_tr = mean_net_state(net, dataset.training_batches())
+    ms_ts = mean_net_state(net, dataset.test_batches())
     return {'acc_tr': ms_tr['acc'], 'acc_ts': ms_ts['acc'],
             'moc_tr': ms_tr['moc'], 'moc_ts': ms_ts['moc'],
             'root': layer_desc(ms_tr, ms_ts, net.root)}
