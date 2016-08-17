@@ -125,14 +125,15 @@ def route_ds_dyn(ℓ, p_tr, p_ev, opts):
 def route_ds(ℓ, p_tr, p_ev, opts):
     if len(ℓ.sinks) < 2: route_ds_stat(ℓ, p_tr, p_ev, opts)
     else: route_ds_dyn(ℓ, p_tr, p_ev, opts)
-    ℓ.params.μ_tr = tf.Variable(0.0)
-    ℓ.params.μ_vl = tf.Variable(0.0)
-    ℓ.c_μ_tr = tf.square(ℓ.params.μ_tr - tf.stop_gradient(ℓ.c_err))
-    ℓ.c_μ_vl = tf.square(ℓ.params.μ_vl - tf.stop_gradient(ℓ.c_err))
-    ℓ.c_gen = tf.stop_gradient(ℓ.params.μ_vl - ℓ.params.μ_tr)
+    ℓ.μ_tr = tf.Variable(0.0, trainable=False)
+    ℓ.μ_vl = tf.Variable(0.0, trainable=False)
+    μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.c_err) / tf.reduce_sum(ℓ.p_tr)
+    ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, opts.λ * ℓ.μ_tr + (1 - opts.λ) * μ_batch)
+    ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, opts.λ * ℓ.μ_vl + (1 - opts.λ) * μ_batch)
+    ℓ.c_gen = ℓ.μ_vl - ℓ.μ_tr
 
 class DSNet(Net):
-    default_hypers = dict(arch=[], k_cpt=0.0, k_l2=0.0, ϵ=0.01)
+    default_hypers = dict(arch=[], k_cpt=0.0, k_l2=0.0, ϵ=0.1, λ=0.99)
 
     def __init__(self, x0_shape, y_shape, optimizer, hypers, root):
         super().__init__(x0_shape, y_shape, hypers, root)
@@ -144,13 +145,11 @@ class DSNet(Net):
         c_cpt = sum(ℓ.p_tr * self.hypers.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
                     for ℓ in self.layers)
-        c_μ_tr = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_μ_tr for ℓ in self.layers)
-        c_μ_vl = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_μ_vl for ℓ in self.layers)
-        c_tr = c_err + c_gen + c_cpt + c_mod + c_μ_tr
-        self._train_op = minimize_expected(
-            self, tf.reduce_mean(c_tr), optimizer)
-        self._validate_op = minimize_expected(
-            self, tf.reduce_mean(c_μ_vl), optimizer)
+        c_tr = c_err + c_gen + c_cpt + c_mod
+        with tf.control_dependencies([ℓ.update_μ_tr for ℓ in self.layers]):
+            self._train_op = minimize_expected(
+                self, tf.reduce_mean(c_tr), optimizer)
+        self._validate_op = tf.group(*(ℓ.update_μ_vl for ℓ in self.layers))
         self._sess = tf.Session()
         self._sess.run(tf.initialize_all_variables())
 
@@ -218,11 +217,12 @@ def route_cr_dyn(ℓ, p_tr, p_ev, opts):
             for i, s in enumerate(ℓ.sinks))
 
 def route_cr(ℓ, p_tr, p_ev, opts):
-    ℓ.params.μ_tr = tf.Variable(0.0)
-    ℓ.params.μ_vl = tf.Variable(0.0)
-    ℓ.c_μ_tr = tf.square(ℓ.params.μ_tr - tf.stop_gradient(ℓ.c_err))
-    ℓ.c_μ_vl = tf.square(ℓ.params.μ_vl - tf.stop_gradient(ℓ.c_err))
-    ℓ.c_gen = tf.stop_gradient(ℓ.params.μ_vl - ℓ.params.μ_tr)
+    ℓ.μ_tr = tf.Variable(0.0, trainable=False)
+    ℓ.μ_vl = tf.Variable(0.0, trainable=False)
+    μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.c_err) / tf.reduce_sum(ℓ.p_tr)
+    ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, opts.λ * ℓ.μ_tr + (1 - opts.λ) * μ_batch)
+    ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, opts.λ * ℓ.μ_vl + (1 - opts.λ) * μ_batch)
+    ℓ.c_gen = ℓ.μ_vl - ℓ.μ_tr
     if len(ℓ.sinks) < 2: route_cr_stat(ℓ, p_tr, p_ev, opts)
     else: route_cr_dyn(ℓ, p_tr, p_ev, opts)
 
@@ -240,13 +240,11 @@ class CRNet(Net):
         c_cpt = sum(ℓ.p_tr * self.hypers.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
         c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
-        c_μ_tr = sum(ℓ.p_tr * ℓ.c_μ_tr for ℓ in self.layers)
-        c_μ_vl = sum(ℓ.p_tr * ℓ.c_μ_vl for ℓ in self.layers)
-        c_tr = c_err + c_cpt + c_cre + c_mod + c_μ_tr
-        self._train_op = minimize_expected(
-            self, tf.reduce_mean(c_tr), optimizer, 1 / self.hypers.k_cre)
-        self._validate_op = minimize_expected(
-            self, tf.reduce_mean(c_μ_vl), optimizer)
+        c_tr = c_err + c_cpt + c_cre + c_mod
+        with tf.control_dependencies([ℓ.update_μ_tr for ℓ in self.layers]):
+            self._train_op = minimize_expected(
+                self, tf.reduce_mean(c_tr), optimizer)
+        self._validate_op = tf.group(*(ℓ.update_μ_vl for ℓ in self.layers))
         self._sess = tf.Session()
         self._sess.run(tf.initialize_all_variables())
 
