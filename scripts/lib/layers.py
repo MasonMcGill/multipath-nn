@@ -29,14 +29,16 @@ class Layer(metaclass=ABCMeta):
 ################################################################################
 
 class LinTrans(Layer):
-    default_hypers = dict(n_chan=1, k_l2=0)
+    default_hypers = dict(n_chan=1, k_l2=0, σ_w=1)
 
     def link(self, sigs):
         super().link(sigs)
-        n_chan, k_l2 = self.hypers.n_chan, self.hypers.k_l2
+        n_chan = self.hypers.n_chan
+        k_l2 = self.hypers.k_l2
+        σ_w = self.hypers.σ_w
         n_chan_in = np.prod(sigs.x.get_shape().as_list()[1:])
         w_shape = (n_chan_in, n_chan)
-        w_scale = 1 / np.sqrt(n_chan_in)
+        w_scale = σ_w / np.sqrt(n_chan_in)
         w = tf.Variable(w_scale * tf.random_normal(w_shape))
         b = tf.Variable(tf.zeros(n_chan))
         x_flat = tf.reshape(sigs.x, (-1, n_chan_in))
@@ -46,17 +48,18 @@ class LinTrans(Layer):
         self.params = Namespace(w=w, b=b)
 
 class Conv(Layer):
-    default_hypers = dict(n_chan=2, supp=1, k_l2=0)
+    default_hypers = dict(n_chan=2, supp=1, k_l2=0, σ_w=1)
 
     def link(self, sigs):
         super().link(sigs)
         n_chan = self.hypers.n_chan
         supp = self.hypers.supp
         k_l2 = self.hypers.k_l2
+        σ_w = self.hypers.σ_w
         n_pix = np.prod(sigs.x.get_shape().as_list()[1:3])
         n_chan_in = sigs.x.get_shape()[3].value
         w_shape = (supp, supp, n_chan_in, n_chan)
-        w_scale = 1 / np.sqrt(supp**2 * n_chan_in)
+        w_scale = σ_w / np.sqrt(supp**2 * n_chan_in)
         w = tf.Variable(w_scale * tf.random_normal(w_shape))
         b = tf.Variable(tf.zeros(n_chan))
         self.x = tf.nn.conv2d(sigs.x, w, (1, 1, 1, 1), 'SAME') + b
