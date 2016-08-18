@@ -1,4 +1,4 @@
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta
 from functools import reduce
 from types import SimpleNamespace as Namespace
 
@@ -100,17 +100,13 @@ class SRNet(Net):
 # Decision Smoothing Networks
 ################################################################################
 
-def route_ds_stat(ℓ, p_tr, p_ev, opts):
-    ℓ.p_tr = p_tr
-    ℓ.p_ev = p_ev
+def route_sinks_ds_stat(ℓ, opts):
     ℓ.router = Chain({}, [])
     ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     for s in ℓ.sinks:
         route_ds(s, ℓ.p_tr, ℓ.p_ev, opts)
 
-def route_ds_dyn(ℓ, p_tr, p_ev, opts):
-    ℓ.p_tr = p_tr
-    ℓ.p_ev = p_ev
+def route_sinks_ds_dyn(ℓ, opts):
     ℓ.router = router(len(ℓ.sinks), opts.arch, opts.k_l2)
     ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     π_tr = (
@@ -123,8 +119,8 @@ def route_ds_dyn(ℓ, p_tr, p_ev, opts):
         route_ds(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
 
 def route_ds(ℓ, p_tr, p_ev, opts):
-    if len(ℓ.sinks) < 2: route_ds_stat(ℓ, p_tr, p_ev, opts)
-    else: route_ds_dyn(ℓ, p_tr, p_ev, opts)
+    ℓ.p_tr = p_tr
+    ℓ.p_ev = p_ev
     ℓ.μ_tr = tf.Variable(0.0, trainable=False)
     ℓ.μ_vl = tf.Variable(0.0, trainable=False)
     ℓ.v_tr = tf.Variable(1.0, trainable=False)
@@ -144,6 +140,8 @@ def route_ds(ℓ, p_tr, p_ev, opts):
     ℓ.c_gen = (
         tf.sqrt((ℓ.v_vl + 1e-3) / (ℓ.v_tr + 1e-3))
         * (ℓ.c_err - ℓ.μ_tr) + ℓ.μ_vl)
+    if len(ℓ.sinks) < 2: route_sinks_ds_stat(ℓ, opts)
+    else: route_sinks_ds_dyn(ℓ, opts)
 
 class DSNet(Net):
     default_hypers = dict(arch=[], k_cpt=0.0, k_l2=0.0, ϵ=0.1, λ=0.99)
@@ -184,7 +182,7 @@ class DSNet(Net):
 # Cost Regression Networks
 ################################################################################
 
-def route_cr_stat(ℓ, p_tr, p_ev, opts):
+def route_sinks_cr_stat(ℓ, opts):
     ℓ.router = Chain({}, [])
     ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     for s in ℓ.sinks:
@@ -197,7 +195,7 @@ def route_cr_stat(ℓ, p_tr, p_ev, opts):
         + sum(s.c_opt for s in ℓ.sinks))
     ℓ.c_cre = 0.0
 
-def route_cr_dyn(ℓ, p_tr, p_ev, opts):
+def route_sinks_cr_dyn(ℓ, opts):
     ℓ.router = router(len(ℓ.sinks), opts.arch, opts.k_l2)
     ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     π_ev = tf.to_float(tf.equal(
@@ -246,8 +244,8 @@ def route_cr(ℓ, p_tr, p_ev, opts):
     ℓ.c_gen = (
         tf.sqrt((ℓ.v_vl + 1e-3) / (ℓ.v_tr + 1e-3))
         * (ℓ.c_err - ℓ.μ_tr) + ℓ.μ_vl)
-    if len(ℓ.sinks) < 2: route_cr_stat(ℓ, p_tr, p_ev, opts)
-    else: route_cr_dyn(ℓ, p_tr, p_ev, opts)
+    if len(ℓ.sinks) < 2: route_sinks_cr_stat(ℓ, opts)
+    else: route_sinks_cr_dyn(ℓ, opts)
 
 class CRNet(Net):
     default_hypers = dict(
