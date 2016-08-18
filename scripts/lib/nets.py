@@ -173,8 +173,6 @@ class DSNet(Net):
 ################################################################################
 
 def route_cr_stat(ℓ, p_tr, p_ev, opts):
-    ℓ.p_tr = p_tr
-    ℓ.p_ev = p_ev
     ℓ.router = Chain({}, [])
     ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     for s in ℓ.sinks:
@@ -188,8 +186,6 @@ def route_cr_stat(ℓ, p_tr, p_ev, opts):
     ℓ.c_cre = 0.0
 
 def route_cr_dyn(ℓ, p_tr, p_ev, opts):
-    ℓ.p_tr = p_tr
-    ℓ.p_ev = p_ev
     ℓ.router = router(len(ℓ.sinks), opts.arch, opts.k_l2)
     ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
     π_ev = tf.to_float(tf.equal(
@@ -217,6 +213,8 @@ def route_cr_dyn(ℓ, p_tr, p_ev, opts):
             for i, s in enumerate(ℓ.sinks))
 
 def route_cr(ℓ, p_tr, p_ev, opts):
+    ℓ.p_tr = p_tr
+    ℓ.p_ev = p_ev
     ℓ.μ_tr = tf.Variable(0.0, trainable=False)
     ℓ.μ_vl = tf.Variable(0.0, trainable=False)
     μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.c_err) / tf.reduce_sum(ℓ.p_tr)
@@ -228,7 +226,7 @@ def route_cr(ℓ, p_tr, p_ev, opts):
 
 class CRNet(Net):
     default_hypers = dict(
-        arch=[], k_cpt=0.0, k_cre=1e-3, k_l2=0.0, ϵ=0.1,
+        arch=[], k_cpt=0.0, k_cre=1e-3, k_l2=0.0, ϵ=0.1, λ=0.99,
         optimistic=False)
 
     def __init__(self, x0_shape, y_shape, optimizer, hypers, root):
@@ -243,7 +241,7 @@ class CRNet(Net):
         c_tr = c_err + c_cpt + c_cre + c_mod
         with tf.control_dependencies([ℓ.update_μ_tr for ℓ in self.layers]):
             self._train_op = minimize_expected(
-                self, tf.reduce_mean(c_tr), optimizer)
+                self, tf.reduce_mean(c_tr), optimizer, 1 / self.hypers.k_cre)
         self._validate_op = tf.group(*(ℓ.update_μ_vl for ℓ in self.layers))
         self._sess = tf.Session()
         self._sess.run(tf.initialize_all_variables())
