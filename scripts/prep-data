@@ -10,6 +10,16 @@ import scipy.io as io
 import scipy.ndimage.filters as flt
 
 ################################################################################
+# Define local luminance normalization.
+################################################################################
+
+def normalize(x0, σ=3, ϵ=1e-3):
+    return x0 / (
+        0.2989 * flt.gaussian_filter(x0[..., 0], σ) +
+        0.5870 * flt.gaussian_filter(x0[..., 1], σ) +
+        0.1140 * flt.gaussian_filter(x0[..., 2], σ) + ϵ)[..., None]
+
+################################################################################
 # Download MNIST.
 ################################################################################
 
@@ -52,15 +62,16 @@ print(80 * '\b \b' + 'Reformatting MNIST — done!')
 # Download CIFAR-10.
 ################################################################################
 
-def log_cifar_progress(i, chunk_size, file_size):
+def log_cifar10_progress(i, chunk_size, file_size):
     print('\rDownloading CIFAR-10 — %.2f%% complete.'
           % (100 * i * chunk_size / file_size), end='', flush=True)
 
-cifar_url = 'https://www.cs.toronto.edu/~kriz/cifar-10-matlab.tar.gz'
-cifar_dir = TemporaryDirectory()
-cifar_path = cifar_dir.name
+cifar10_url = 'https://www.cs.toronto.edu/~kriz/cifar-10-matlab.tar.gz'
+cifar10_dir = TemporaryDirectory()
+cifar10_path = cifar10_dir.name
 
-urlretrieve(cifar_url, join(cifar_path, '_cifar.tar.gz'), log_cifar_progress)
+urlretrieve(cifar10_url, join(cifar10_path, '_cifar10.tar.gz'),
+            log_cifar10_progress)
 print(80 * '\b \b' + 'Downloading CIFAR-10 — done!')
 
 ################################################################################
@@ -68,52 +79,100 @@ print(80 * '\b \b' + 'Downloading CIFAR-10 — done!')
 ################################################################################
 
 print('Reformatting CIFAR-10...', end='', flush=True)
-unpack_archive(join(cifar_path, '_cifar.tar.gz'), cifar_path)
+unpack_archive(join(cifar10_path, '_cifar10.tar.gz'), cifar10_path)
 
-cifar_a_tr = [
-    io.loadmat(join(cifar_path, 'cifar-10-batches-mat/data_batch_%i.mat' % i))
+cifar10_a_tr = [
+    io.loadmat(join(cifar10_path, 'cifar-10-batches-mat/data_batch_%i.mat' % i))
     for i in range(1, 6)]
-cifar_a_ts = [
-    io.loadmat(join(cifar_path, 'cifar-10-batches-mat/test_batch.mat'))]
-cifar_b = {
+cifar10_a_ts = [
+    io.loadmat(join(cifar10_path, 'cifar-10-batches-mat/test_batch.mat'))]
+cifar10_b = {
     'x0_tr': np.vstack([
         np.float32(np.transpose(
             np.reshape(batch['data']**2.2, (-1, 3, 32, 32)),
             (0, 2, 3, 1)) / 255**2.2)
-        for batch in cifar_a_tr]),
+        for batch in cifar10_a_tr]),
     'x0_ts': np.vstack([
         np.float32(np.transpose(
             np.reshape(batch['data']**2.2, (-1, 3, 32, 32)),
             (0, 2, 3, 1)) / 255**2.2)
-        for batch in cifar_a_ts]),
+        for batch in cifar10_a_ts]),
     'y_tr': np.vstack([
         np.float32(batch['labels'] == np.arange(10))
-        for batch in cifar_a_tr]),
+        for batch in cifar10_a_tr]),
     'y_ts': np.vstack([
         np.float32(batch['labels'] == np.arange(10))
-        for batch in cifar_a_ts])}
+        for batch in cifar10_a_ts])}
 
 makedirs('data/', exist_ok=True)
-io.savemat('data/cifar-10.mat', cifar_b, do_compression=True)
+io.savemat('data/cifar-10.mat', cifar10_b, do_compression=True)
 print(80 * '\b \b' + 'Reformatting CIFAR-10 — done!')
 
 ################################################################################
 # Perform Local Luminance Normalization on CIFAR-10.
 ################################################################################
 
-def normalize(x0, σ=3, ϵ=1e-3):
-    return x0 / (
-        0.2989 * flt.gaussian_filter(x0[..., 0], σ) +
-        0.5870 * flt.gaussian_filter(x0[..., 1], σ) +
-        0.1140 * flt.gaussian_filter(x0[..., 2], σ) + ϵ)[..., None]
-
 print('Normalizing CIFAR-10...', end='', flush=True)
 
-cifar_b_lln = {
-    'x0_tr': np.array([normalize(x0) for x0 in cifar_b['x0_tr']]),
-    'x0_ts': np.array([normalize(x0) for x0 in cifar_b['x0_ts']]),
-    'y_tr': cifar_b['y_tr'],
-    'y_ts': cifar_b['y_ts']}
+cifar10_b_lln = {
+    'x0_tr': np.array([normalize(x0) for x0 in cifar10_b['x0_tr']]),
+    'x0_ts': np.array([normalize(x0) for x0 in cifar10_b['x0_ts']]),
+    'y_tr': cifar10_b['y_tr'],
+    'y_ts': cifar10_b['y_ts']}
 
-io.savemat('data/cifar-10-lln.mat', cifar_b_lln, do_compression=True)
+io.savemat('data/cifar-10-lln.mat', cifar10_b_lln, do_compression=True)
 print(80 * '\b \b' + 'Normalizing CIFAR-10 — done!')
+
+################################################################################
+# Download CIFAR-100.
+################################################################################
+
+def log_cifar100_progress(i, chunk_size, file_size):
+    print('\rDownloading CIFAR-100 — %.2f%% complete.'
+          % (100 * i * chunk_size / file_size), end='', flush=True)
+
+cifar100_url = 'https://www.cs.toronto.edu/~kriz/cifar-100-matlab.tar.gz'
+cifar100_dir = TemporaryDirectory()
+cifar100_path = cifar100_dir.name
+
+urlretrieve(cifar100_url, join(cifar100_path, '_cifar100.tar.gz'),
+            log_cifar100_progress)
+print(80 * '\b \b' + 'Downloading CIFAR-100 — done!')
+
+################################################################################
+# Reformat and Gamma-Decode CIFAR-100.
+################################################################################
+
+print('Reformatting CIFAR-100...', end='', flush=True)
+unpack_archive(join(cifar100_path, '_cifar100.tar.gz'), cifar100_path)
+
+cifar100_a_tr = io.loadmat(join(cifar100_path, 'cifar-100-matlab/train.mat'))
+cifar100_a_ts = io.loadmat(join(cifar100_path, 'cifar-100-matlab/test.mat'))
+cifar100_b = {
+    'x0_tr': np.float32(np.transpose(
+        np.reshape(cifar100_a_tr['data']**2.2, (-1, 3, 32, 32)),
+        (0, 2, 3, 1)) / 255**2.2),
+    'x0_ts': np.float32(np.transpose(
+        np.reshape(cifar100_a_ts['data']**2.2, (-1, 3, 32, 32)),
+        (0, 2, 3, 1)) / 255**2.2),
+    'y_tr': np.float32(cifar100_a_tr['fine_labels'] == np.arange(100)),
+    'y_ts': np.float32(cifar100_a_ts['fine_labels'] == np.arange(100))}
+
+makedirs('data/', exist_ok=True)
+io.savemat('data/cifar-100.mat', cifar100_b, do_compression=True)
+print(80 * '\b \b' + 'Reformatting CIFAR-100 — done!')
+
+################################################################################
+# Perform Local Luminance Normalization on CIFAR-100.
+################################################################################
+
+print('Normalizing CIFAR-100...', end='', flush=True)
+
+cifar100_b_lln = {
+    'x0_tr': np.array([normalize(x0) for x0 in cifar100_b['x0_tr']]),
+    'x0_ts': np.array([normalize(x0) for x0 in cifar100_b['x0_ts']]),
+    'y_tr': cifar100_b['y_tr'],
+    'y_ts': cifar100_b['y_ts']}
+
+io.savemat('data/cifar-100-lln.mat', cifar100_b_lln, do_compression=True)
+print(80 * '\b \b' + 'Normalizing CIFAR-100 — done!')
