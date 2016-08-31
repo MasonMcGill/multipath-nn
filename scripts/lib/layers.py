@@ -5,24 +5,22 @@ import numpy as np
 import tensorflow as tf
 
 ################################################################################
-# Root Layer Class
+# Core Layer Class
 ################################################################################
 
 class Layer(metaclass=ABCMeta):
     default_hypers = {}
 
-    def __init__(self, hypers, *sinks):
+    def __init__(self, **hypers):
         full_hyper_dict = {**self.__class__.default_hypers, **hypers}
         self.hypers = Namespace(**full_hyper_dict)
         self.params = Namespace()
-        self.router = Namespace()
-        self.sinks = sinks
 
-    def link(self, sigs):
-        self.x = sigs.x
-        self.c_err = tf.zeros(tf.shape(sigs.x)[:1])
-        self.c_mod = tf.zeros(tf.shape(sigs.x)[:1])
-        self.n_ops = tf.zeros(tf.shape(sigs.x)[:1])
+    def link(self, x, y, mode):
+        self.x = x
+        self.c_err = tf.zeros(())
+        self.c_mod = tf.zeros(())
+        self.n_ops = tf.zeros(())
 
 ################################################################################
 # Transformation Layers
@@ -31,60 +29,53 @@ class Layer(metaclass=ABCMeta):
 class LinTrans(Layer):
     default_hypers = dict(n_chan=1, k_l2=0, σ_w=1)
 
-    def link(self, sigs):
-        super().link(sigs)
-        n_chan = self.hypers.n_chan
-        k_l2 = self.hypers.k_l2
-        σ_w = self.hypers.σ_w
-        n_chan_in = np.prod(sigs.x.get_shape().as_list()[1:])
-        w_shape = (n_chan_in, n_chan)
-        w_scale = σ_w / np.sqrt(n_chan_in)
-        w = tf.Variable(w_scale * tf.random_normal(w_shape))
-        b = tf.Variable(tf.zeros(n_chan))
-        x_flat = tf.reshape(sigs.x, (-1, n_chan_in))
-        self.x = tf.matmul(x_flat, w) + b
-        self.c_mod = k_l2 * tf.reduce_sum(tf.square(w))
-        self.n_ops = np.prod(w.get_shape().as_list())
-        self.params = Namespace(w=w, b=b)
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        ϕ, θ = self.hypers, self.params
+        n_in = np.prod(x.get_shape().as_list()[1:])
+        w_shape = (n_in, ϕ.n_chan)
+        w_scale = ϕ.σ_w / np.sqrt(n_in)
+        θ.w = tf.Variable(w_scale * tf.random_normal(w_shape))
+        θ.b = tf.Variable(tf.zeros(ϕ.n_chan))
+        self.x = tf.matmul(tf.reshape(x, (-1, n_in)), θ.w) + θ.b
+        self.c_mod = ϕ.k_l2 * tf.reduce_sum(tf.square(θ.w))
+        self.n_ops = n_in * ϕ.n_chan
 
 class Conv(Layer):
-    default_hypers = dict(n_chan=2, supp=1, k_l2=0, σ_w=1)
+    default_hypers = dict(n_chan=1, supp=1, k_l2=0, σ_w=1)
 
-    def link(self, sigs):
-        super().link(sigs)
-        n_chan = self.hypers.n_chan
-        supp = self.hypers.supp
-        k_l2 = self.hypers.k_l2
-        σ_w = self.hypers.σ_w
-        n_pix = np.prod(sigs.x.get_shape().as_list()[1:3])
-        n_chan_in = sigs.x.get_shape()[3].value
-        w_shape = (supp, supp, n_chan_in, n_chan)
-        w_scale = σ_w / np.sqrt(supp**2 * n_chan_in)
-        w = tf.Variable(w_scale * tf.random_normal(w_shape))
-        b = tf.Variable(tf.zeros(n_chan))
-        self.x = tf.nn.conv2d(sigs.x, w, (1, 1, 1, 1), 'SAME') + b
-        self.c_mod = k_l2 * tf.reduce_sum(tf.square(w))
-        self.n_ops = np.prod(w.get_shape().as_list()) * n_pix
-        self.params = Namespace(w=w, b=b)
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        ϕ, θ = self.hypers, self.params
+        n_in = x.get_shape().as_list()[3]
+        n_pix = np.prod(x.get_shape().as_list()[1:3])
+        w_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
+        w_scale = ϕ.σ_w / ϕ.supp / np.sqrt(n_in)
+        θ.w = tf.Variable(w_scale * tf.random_normal(w_shape))
+        θ.b = tf.Variable(tf.zeros(ϕ.n_chan))
+        self.x = tf.nn.conv2d(x, θ.w, (1, 1, 1, 1), 'SAME') + θ.b
+        self.c_mod = ϕ.k_l2 * tf.reduce_sum(tf.square(θ.w))
+        self.n_ops = n_pix * ϕ.supp**2 * n_in * ϕ.n_chan
 
 class Rect(Layer):
-    def link(self, sigs):
-        super().link(sigs)
-        self.x = tf.nn.relu(sigs.x)
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        self.x = tf.nn.relu(x)
 
 class Softmax(Layer):
-    def link(self, sigs):
-        super().link(sigs)
-        self.x = tf.nn.softmax(sigs.x)
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        self.x = tf.nn.softmax(x)
 
 class MaxPool(Layer):
     default_hypers = dict(stride=1, supp=1)
 
-    def link(self, sigs):
-        super().link(sigs)
-        stride, supp = self.hypers.stride, self.hypers.supp
-        stride_spec, supp_spec = (1, stride, stride, 1), (1, supp, supp, 1)
-        self.x = tf.nn.max_pool(sigs.x, supp_spec, stride_spec, 'SAME')
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        ϕ = self.hypers
+        strides = (1, ϕ.stride, ϕ.stride, 1)
+        k_shape = (1, ϕ.supp, ϕ.supp, 1)
+        self.x = tf.nn.max_pool(x, strides, k_shape, 'SAME')
 
 ################################################################################
 # Regularization Layers
@@ -93,68 +84,67 @@ class MaxPool(Layer):
 class Dropout(Layer):
     default_hypers = dict(λ=1)
 
-    def link(self, sigs):
-        super().link(sigs)
-        self.x = tf.nn.dropout(sigs.x, self.hypers.λ)
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        self.x = tf.nn.dropout(x, self.hypers.λ)
 
 class BatchNorm(Layer):
     default_hypers = dict(d=0.9, ϵ=1e-6)
 
-    def link(self, sigs):
-        super().link(sigs)
-        d, ϵ = self.hypers.d, self.hypers.ϵ
-        n_dim = len(sigs.x.get_shape())
-        n_chan = sigs.x.get_shape()[-1].value
-        γ = tf.Variable(tf.ones(n_chan))
-        β = tf.Variable(tf.zeros(n_chan))
-        m_avg = tf.Variable(tf.zeros(n_chan), trainable=False)
-        v_avg = tf.Variable(tf.ones(n_chan), trainable=False)
-        m_batch, v_batch = tf.nn.moments(sigs.x, tuple(range(n_dim - 1)))
-        update_m = tf.assign(m_avg, d * m_avg + (1 - d) * m_batch)
-        update_v = tf.assign(v_avg, d * v_avg + (1 - d) * v_batch)
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        ϕ, θ = self.hypers, self.params
+        n_dim = len(x.get_shape())
+        n_chan = x.get_shape().as_list()[-1]
+        θ.γ = tf.Variable(tf.ones(n_chan))
+        θ.β = tf.Variable(tf.zeros(n_chan))
+        θ.m_avg = tf.Variable(tf.zeros(n_chan), trainable=False)
+        θ.v_avg = tf.Variable(tf.ones(n_chan), trainable=False)
+        m_batch, v_batch = tf.nn.moments(x, tuple(range(n_dim - 1)))
+        update_m = tf.assign(θ.m_avg, ϕ.d * θ.m_avg + (1 - ϕ.d) * m_batch)
+        update_v = tf.assign(θ.v_avg, ϕ.d * θ.v_avg + (1 - ϕ.d) * v_batch)
         with tf.control_dependencies([update_m, update_v]):
-            x_tr = γ * (sigs.x - m_batch) / tf.sqrt(v_batch + ϵ) + β
-        x_ev = γ * (sigs.x - m_avg) / tf.sqrt(v_avg + ϵ) + β
-        self.x = tf.cond(tf.equal(sigs.mode, 'tr'),
-            lambda: x_tr, lambda: x_ev)
-        self.params = Namespace(γ=γ, β=β)
+            x_tr = θ.γ * (x - m_batch) / tf.sqrt(v_batch + ϕ.ϵ) + θ.β
+        x_ev = θ.γ * (x - θ.m_avg) / tf.sqrt(θ.v_avg + ϕ.ϵ) + θ.β
+        self.x = tf.cond(tf.equal(mode, 'tr'), lambda: x_tr, lambda: x_ev)
 
 ################################################################################
 # Error Layers
 ################################################################################
 
 class SquaredError(Layer):
-    def link(self, sigs):
-        super().link(sigs)
-        self.c_err = tf.reduce_sum(tf.square(sigs.x - sigs.y), 1)
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        self.c_err = tf.reduce_sum(tf.square(x - y), 1)
 
 class CrossEntropyError(Layer):
     default_hypers = dict(ϵ=1e-6)
 
-    def link(self, sigs):
-        super().link(sigs)
-        n_cls = sigs.y.get_shape()[1].value
-        p_cls = self.hypers.ϵ / n_cls + (1 - self.hypers.ϵ) * sigs.x
-        self.c_err = -tf.reduce_sum(sigs.y * tf.log(p_cls), 1)
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        ϕ = self.hypers
+        n_cls = y.get_shape()[1].value
+        p_cls = ϕ.ϵ / n_cls + (1 - ϕ.ϵ) * x
+        self.c_err = -tf.reduce_sum(y * tf.log(p_cls), 1)
 
 ################################################################################
 # Compound Layers
 ################################################################################
 
 class Chain(Layer):
-    def __init__(self, hypers, comps, *sinks):
-        super().__init__(hypers, *sinks)
+    def __init__(self, *comps):
+        super().__init__(comps=[type(c).__name__ for c in comps])
         self.comps = comps
 
-    def link(self, sigs):
-        super().link(sigs)
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
         for ℓ in self.comps:
-            ℓ.link(sigs)
-            sigs.x = ℓ.x
+            ℓ.link(x, y, mode)
+            x = ℓ.x
+        self.x = x
         self.c_err = sum(ℓ.c_err for ℓ in self.comps)
         self.c_mod = sum(ℓ.c_mod for ℓ in self.comps)
         self.n_ops = sum(ℓ.n_ops for ℓ in self.comps)
-        self.x = sigs.x
         self.params = Namespace(**{
             ('layer%i_%s' % (i, k)): v
             for i, ℓ in enumerate(self.comps)

@@ -5,16 +5,17 @@ from types import SimpleNamespace as Namespace
 import numpy as np
 import tensorflow as tf
 
-from lib.layers import BatchNorm, Chain, LinTrans, Rect
+from lib.layers import BatchNorm, Chain, Layer, LinTrans, Rect
 
 ################################################################################
 # Routing Layers
 ################################################################################
 
 def router(n_act, arch, k_l2):
-    return Chain({},
-        sum(([LinTrans(dict(n_chan=n, k_l2=k_l2)), BatchNorm({}), Rect({})]
-             for n in arch), []) + [LinTrans(dict(n_chan=n_act, k_l2=k_l2))])
+    layers = [LinTrans(n_chan=n_act, k_l2=k_l2)]
+    for n in reversed(arch):
+        layers = [LinTrans(n_chan=n, k_l2=k_l2), BatchNorm(), Rect()] + layers
+    return Chain(*layers)
 
 ################################################################################
 # Optimization
@@ -37,18 +38,25 @@ def minimize_expected(net, cost, optimizer, lr_routing_scale=1.0):
 class Net(metaclass=ABCMeta):
     default_hypers = {}
 
-    def __init__(self, x0_shape, y_shape, hypers, root):
+    def __init__(self, x0_shape, y_shape, hypers, layers):
         full_hyper_dict = {**self.__class__.default_hypers, **hypers}
         self.hypers = Namespace(**full_hyper_dict)
         self.x0 = tf.placeholder(tf.float32, (None,) + x0_shape)
         self.y = tf.placeholder(tf.float32, (None,) + y_shape)
         self.mode = tf.placeholder_with_default('ev', ())
-        self.root = root
-        def link(ℓ, x):
-            ℓ.link(Namespace(x=x, y=self.y, mode=self.mode))
-            for s in ℓ.sinks:
-                link(s, ℓ.x)
-        link(self.root, self.x0)
+        self.sinks = {}
+        def head(tree):
+            return tree if isinstance(tree, Layer) else tree[0]
+        def tail(tree):
+            return [] if isinstance(tree, Layer) else tree[1:]
+        def link(tree, x):
+            source, sinks = head(tree), tail(tree)
+            source.link(x, self.y, self.mode)
+            source.sinks = list(map(head, sinks))
+            for s in sinks:
+                link(s, source.x)
+        self.root = head(layers)
+        link(layers, self.x0)
 
     @property
     def layers(self):
@@ -76,8 +84,8 @@ class Net(metaclass=ABCMeta):
 ################################################################################
 
 class SRNet(Net):
-    def __init__(self, x0_shape, y_shape, optimizer, root):
-        super().__init__(x0_shape, y_shape, {}, root)
+    def __init__(self, x0_shape, y_shape, optimizer, layers):
+        super().__init__(x0_shape, y_shape, {}, layers)
         for ℓ in self.layers:
             ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
         c_tr = sum(ℓ.c_err + ℓ.c_mod for ℓ in self.layers)
@@ -101,14 +109,14 @@ class SRNet(Net):
 ################################################################################
 
 def route_sinks_ds_stat(ℓ, opts):
-    ℓ.router = Chain({}, [])
-    ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
+    ℓ.router = Chain()
+    ℓ.router.link(ℓ.x, None, opts.mode)
     for s in ℓ.sinks:
         route_ds(s, ℓ.p_tr, ℓ.p_ev, opts)
 
 def route_sinks_ds_dyn(ℓ, opts):
     ℓ.router = router(len(ℓ.sinks), opts.arch, opts.k_l2)
-    ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
+    ℓ.router.link(ℓ.x, None, opts.mode)
     π_tr = (
         opts.ϵ / len(ℓ.sinks)
         + (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x))
@@ -183,8 +191,8 @@ class DSNet(Net):
 ################################################################################
 
 def route_sinks_cr_stat(ℓ, opts):
-    ℓ.router = Chain({}, [])
-    ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
+    ℓ.router = Chain()
+    ℓ.router.link(ℓ.x, None, opts.mode)
     for s in ℓ.sinks:
         route_cr(s, ℓ.p_tr, ℓ.p_ev, opts)
     ℓ.c_ev = (
@@ -197,7 +205,7 @@ def route_sinks_cr_stat(ℓ, opts):
 
 def route_sinks_cr_dyn(ℓ, opts):
     ℓ.router = router(len(ℓ.sinks), opts.arch, opts.k_l2)
-    ℓ.router.link(Namespace(x=ℓ.x, mode=opts.mode))
+    ℓ.router.link(ℓ.x, None, opts.mode)
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))

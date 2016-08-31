@@ -41,30 +41,22 @@ log = {'sr': [], 'ds_casc': [], 'cr_casc': [],  'ds_tree': [],  'cr_tree': []}
 ################################################################################
 
 class Input(Layer):
-    def __init__(self, *sinks):
-        super().__init__({}, *sinks)
+    pass
 
 class ReConvMP(Chain):
-    def __init__(self, n_chan, *sinks):
-        conv_params = {'n_chan': n_chan, 'supp': 3, 'k_l2': k_l2}
-        pool_params = {'stride': 2, 'supp': 2}
-        super().__init__({}, [
-            Conv(conv_params), BatchNorm({}), Rect({}),
-            Conv(conv_params), BatchNorm({}), Rect({}),
-            Conv(conv_params), BatchNorm({}), Rect({}),
-            MaxPool(pool_params)], *sinks)
-
-class ReLin(Chain):
-    def __init__(self, n_chan, *sinks):
-        super().__init__({}, [
-            LinTrans({'n_chan': n_chan, 'k_l2': k_l2}),
-            BatchNorm({}), Rect({})], *sinks)
+    def __init__(self, n_chan):
+        conv_hypers = dict(n_chan=n_chan, supp=3, k_l2=k_l2, σ_w=1e-2)
+        super().__init__(
+            Conv(**conv_hypers), BatchNorm(), Rect(),
+            Conv(**conv_hypers), BatchNorm(), Rect(),
+            Conv(**conv_hypers), BatchNorm(), Rect(),
+            MaxPool(stride=2, supp=2))
 
 class LogReg(Chain):
     def __init__(self):
-        super().__init__({}, [
-            LinTrans({'n_chan': y_shape[0], 'k_l2': k_l2}),
-            Softmax({}), SquaredError({})])
+        super().__init__(
+            LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=1e-2),
+            Softmax(), SquaredError())
 
 ################################################################################
 # Define an optimizer.
@@ -83,11 +75,12 @@ print('\n —— Training statically-routed networks... ——\n')
 for n_tf in [3]:
     root = LogReg()
     for i in reversed(range(n_tf)):
-        root = ReConvMP(32 * 2**i, root)
-    root = Input(root)
+        root = [ReConvMP(32 * 2**i), root]
+    root = [Input(), root]
     net = SRNet(x0_shape, y_shape, optimizer, root)
     name = 'Static Routing (n_tf=%i)' % n_tf
-    desc = train(net, dataset, name=name, hypers=(lambda t: {t_train: t}))
+    desc = train(net, dataset, logging_period=1, name=name, hypers=(
+        lambda t: {t_train: t}))
     log['sr'].append({'n_tf': n_tf, 'net': desc})
 
 ################################################################################
@@ -99,10 +92,10 @@ print('\n —— Training decision smoothing cascades... ——\n')
 for k_cpt in k_cpts:
     hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2)
     net = DSNet(x0_shape, y_shape, optimizer, hypers,
-        Input(LogReg(),
-            ReConvMP(32, LogReg(),
-                ReConvMP(64, LogReg(),
-                    ReConvMP(128, LogReg())))))
+        [Input(), LogReg(),
+            [ReConvMP(32), LogReg(),
+                [ReConvMP(64), LogReg(),
+                    [ReConvMP(128), LogReg()]]]])
     name = 'Decision Smoothing Cascade (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, logging_period=1, name=name, hypers=(
         lambda t: {t_train: t}))
@@ -115,12 +108,12 @@ for k_cpt in k_cpts:
 print('\n —— Training cost regression cascades... ——\n')
 
 for k_cpt in k_cpts:
-    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2)
+    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2, optimistic=True)
     net = CRNet(x0_shape, y_shape, optimizer, hypers,
-        Input(LogReg(),
-            ReConvMP(32, LogReg(),
-                ReConvMP(64, LogReg(),
-                    ReConvMP(128, LogReg())))))
+        [Input(), LogReg(),
+            [ReConvMP(32), LogReg(),
+                [ReConvMP(64), LogReg(),
+                    [ReConvMP(128), LogReg()]]]])
     name = 'Cost Regression Cascade (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, logging_period=1, name=name, hypers=(
         lambda t: {t_train: t}))
@@ -135,21 +128,21 @@ print('\n —— Training decision smoothing trees... ——\n')
 for k_cpt in k_cpts:
     hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2)
     net = DSNet(x0_shape, y_shape, optimizer, hypers,
-        Input(LogReg(),
-            ReConvMP(32, LogReg(),
-                ReConvMP(64, LogReg(),
-                    ReConvMP(128, LogReg()),
-                    ReConvMP(128, LogReg())),
-                ReConvMP(64, LogReg(),
-                    ReConvMP(128, LogReg()),
-                    ReConvMP(128, LogReg()))),
-            ReConvMP(32, LogReg(),
-                ReConvMP(64, LogReg(),
-                    ReConvMP(128, LogReg()),
-                    ReConvMP(128, LogReg())),
-                ReConvMP(64, LogReg(),
-                    ReConvMP(128, LogReg()),
-                    ReConvMP(128, LogReg())))))
+        [Input(), LogReg(),
+            [ReConvMP(32), LogReg(),
+                [ReConvMP(64), LogReg(),
+                    [ReConvMP(128), LogReg()],
+                    [ReConvMP(128), LogReg()]],
+                [ReConvMP(64), LogReg(),
+                    [ReConvMP(128), LogReg()],
+                    [ReConvMP(128), LogReg()]]],
+            [ReConvMP(32), LogReg(),
+                [ReConvMP(64), LogReg(),
+                    [ReConvMP(128), LogReg()],
+                    [ReConvMP(128), LogReg()]],
+                [ReConvMP(64), LogReg(),
+                    [ReConvMP(128), LogReg()],
+                    [ReConvMP(128), LogReg()]]]])
     name = 'Decision Smoothing Tree (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, logging_period=1, name=name, hypers=(
         lambda t: {t_train: t}))
@@ -162,23 +155,23 @@ for k_cpt in k_cpts:
 print('\n —— Training cost regression trees... ——\n')
 
 for k_cpt in k_cpts:
-    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2)
+    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2, optimistic=True)
     net = CRNet(x0_shape, y_shape, optimizer, hypers,
-        Input(LogReg(),
-            ReConvMP(32, LogReg(),
-                ReConvMP(64, LogReg(),
-                    ReConvMP(128, LogReg()),
-                    ReConvMP(128, LogReg())),
-                ReConvMP(64, LogReg(),
-                    ReConvMP(128, LogReg()),
-                    ReConvMP(128, LogReg()))),
-            ReConvMP(32, LogReg(),
-                ReConvMP(64, LogReg(),
-                    ReConvMP(128, LogReg()),
-                    ReConvMP(128, LogReg())),
-                ReConvMP(64, LogReg(),
-                    ReConvMP(128, LogReg()),
-                    ReConvMP(128, LogReg())))))
+        [Input(), LogReg(),
+            [ReConvMP(32), LogReg(),
+                [ReConvMP(64), LogReg(),
+                    [ReConvMP(128), LogReg()],
+                    [ReConvMP(128), LogReg()]],
+                [ReConvMP(64), LogReg(),
+                    [ReConvMP(128), LogReg()],
+                    [ReConvMP(128), LogReg()]]],
+            [ReConvMP(32), LogReg(),
+                [ReConvMP(64), LogReg(),
+                    [ReConvMP(128), LogReg()],
+                    [ReConvMP(128), LogReg()]],
+                [ReConvMP(64), LogReg(),
+                    [ReConvMP(128), LogReg()],
+                    [ReConvMP(128), LogReg()]]]])
     name = 'Cost Regression Tree (k_cpt=%.1e)' % k_cpt
     desc = train(net, dataset, logging_period=5, name=name, hypers=(
         lambda t: {t_train: t}))
