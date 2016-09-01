@@ -70,13 +70,13 @@ class Net(metaclass=ABCMeta):
     def leaves(self):
         return (ℓ for ℓ in self.layers if len(ℓ.sinks) == 0)
 
-    def train(self, x0, y, hypers):
+    def train(self, x0, y, hypers={}):
         pass
 
-    def validate(self, x0, y, hypers):
+    def validate(self, x0, y, hypers={}):
         pass
 
-    def eval(self, target, x0, y, hypers):
+    def eval(self, target, x0, y, hypers={}):
         pass
 
 ################################################################################
@@ -96,11 +96,11 @@ class SRNet(Net):
     def __del__(self):
         self._sess.close()
 
-    def train(self, x0, y, hypers):
+    def train(self, x0, y, hypers={}):
         self._sess.run(self._train_op, {
             self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
 
-    def eval(self, target, x0, y, hypers):
+    def eval(self, target, x0, y, hypers={}):
         return self._sess.run(target, {
             self.x0: x0, self.y: y, **hypers})
 
@@ -174,15 +174,15 @@ class DSNet(Net):
     def __del__(self):
         self._sess.close()
 
-    def train(self, x0, y, hypers):
+    def train(self, x0, y, hypers={}):
         self._sess.run(self._train_op, {
             self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
 
-    def validate(self, x0, y, hypers):
+    def validate(self, x0, y, hypers={}):
         self._sess.run(self._validate_op, {
             self.x0: x0, self.y: y, **hypers})
 
-    def eval(self, target, x0, y, hypers):
+    def eval(self, target, x0, y, hypers={}):
         return self._sess.run(target, {
             self.x0: x0, self.y: y, **hypers})
 
@@ -280,14 +280,14 @@ class CRNet(Net):
     def __del__(self):
         self._sess.close()
 
-    def train(self, x0, y, hypers):
+    def train(self, x0, y, hypers={}):
         self._sess.run(self._train_op, {
             self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
 
-    def validate(self, x0, y, hypers):
+    def validate(self, x0, y, hypers={}):
         self._sess.run(self._validate_op, {
             self.x0: x0, self.y: y, **hypers})
 
-    def eval(self, target, x0, y, hypers):
+    def eval(self, target, x0, y, hypers={}):
         return self._sess.run(target, {
             self.x0: x0, self.y: y, **hypers})
