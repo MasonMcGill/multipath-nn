@@ -9,7 +9,6 @@
 - Static routing vs. dynamic routing (experiment 1)
 - Decision smoothing vs. cost regression (experiment 1)
 - Trees vs. cascades (experiment 1)
-- Smart routing vs. dumb routing (test informally)
 - Optimistic vs. pragmatic cost regression (test informally)
 - Generalization error estimation (test informally)
 - Spatial pyramids (test informally)

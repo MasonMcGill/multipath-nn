@@ -118,7 +118,7 @@ for n_tf in [3]:
 print('\n —— Training decision smoothing cascades... ——\n')
 
 for k_cpt in k_cpts:
-    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2)
+    hypers = dict(k_cpt=k_cpt, k_l2=k_l2)
     net = DSNet(x0_shape, y_shape, optimizer, hypers,
         [Input(), LogReg(),
             [ReConvMP(32), LogReg(),
@@ -136,7 +136,7 @@ for k_cpt in k_cpts:
 print('\n —— Training cost regression cascades... ——\n')
 
 for k_cpt in k_cpts:
-    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2, optimistic=True)
+    hypers = dict(k_cpt=k_cpt, k_l2=k_l2, optimistic=True)
     net = CRNet(x0_shape, y_shape, optimizer, hypers,
         [Input(), LogReg(),
             [ReConvMP(32), LogReg(),
@@ -154,7 +154,7 @@ for k_cpt in k_cpts:
 print('\n —— Training decision smoothing trees... ——\n')
 
 for k_cpt in k_cpts:
-    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2)
+    hypers = dict(k_cpt=k_cpt, k_l2=k_l2)
     net = DSNet(x0_shape, y_shape, optimizer, hypers,
         [Input(), LogReg(),
             [ReConvMP(32), LogReg(),
@@ -183,7 +183,7 @@ for k_cpt in k_cpts:
 print('\n —— Training cost regression trees... ——\n')
 
 for k_cpt in k_cpts:
-    hypers = dict(arch=[16], k_cpt=k_cpt, k_l2=k_l2, optimistic=True)
+    hypers = dict(k_cpt=k_cpt, k_l2=k_l2, optimistic=True)
     net = CRNet(x0_shape, y_shape, optimizer, hypers,
         [Input(), LogReg(),
             [ReConvMP(32), LogReg(),

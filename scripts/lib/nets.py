@@ -8,16 +8,6 @@ import tensorflow as tf
 from lib.layers import BatchNorm, Chain, Layer, LinTrans, Rect
 
 ################################################################################
-# Routing Layers
-################################################################################
-
-def router(n_act, arch, k_l2):
-    layers = [LinTrans(n_chan=n_act, k_l2=k_l2)]
-    for n in reversed(arch):
-        layers = [LinTrans(n_chan=n, k_l2=k_l2), BatchNorm(), Rect()] + layers
-    return Chain(*layers)
-
-################################################################################
 # Optimization
 ################################################################################
 
@@ -115,7 +105,7 @@ def route_sinks_ds_stat(ℓ, opts):
         route_ds(s, ℓ.p_tr, ℓ.p_ev, opts)
 
 def route_sinks_ds_dyn(ℓ, opts):
-    ℓ.router = router(len(ℓ.sinks), opts.arch, opts.k_l2)
+    ℓ.router = LinTrans(n_chan=len(ℓ.sinks), k_l2=opts.k_l2)
     ℓ.router.link(ℓ.x, None, opts.mode)
     π_tr = (
         opts.ϵ / len(ℓ.sinks)
@@ -152,7 +142,7 @@ def route_ds(ℓ, p_tr, p_ev, opts):
     else: route_sinks_ds_dyn(ℓ, opts)
 
 class DSNet(Net):
-    default_hypers = dict(arch=[], k_cpt=0.0, k_l2=0.0, ϵ=0.1, λ=0.99)
+    default_hypers = dict(k_cpt=0.0, k_l2=0.0, ϵ=0.1, λ=0.99)
 
     def __init__(self, x0_shape, y_shape, optimizer, hypers, root):
         super().__init__(x0_shape, y_shape, hypers, root)
@@ -204,7 +194,7 @@ def route_sinks_cr_stat(ℓ, opts):
     ℓ.c_cre = 0.0
 
 def route_sinks_cr_dyn(ℓ, opts):
-    ℓ.router = router(len(ℓ.sinks), opts.arch, opts.k_l2)
+    ℓ.router = LinTrans(n_chan=len(ℓ.sinks), k_l2=opts.k_l2)
     ℓ.router.link(ℓ.x, None, opts.mode)
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
@@ -257,7 +247,7 @@ def route_cr(ℓ, p_tr, p_ev, opts):
 
 class CRNet(Net):
     default_hypers = dict(
-        arch=[], k_cpt=0.0, k_cre=1e-3, k_l2=0.0, ϵ=0.1, λ=0.99,
+        k_cpt=0.0, k_cre=1e-3, k_l2=0.0, ϵ=0.1, λ=0.99,
         optimistic=False)
 
     def __init__(self, x0_shape, y_shape, optimizer, hypers, root):
