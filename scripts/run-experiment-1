@@ -10,8 +10,8 @@ import tensorflow as tf
 
 from lib.data import Dataset
 from lib.layers import (
-    BatchNorm, Chain, Conv, Layer, LinTrans,
-    MaxPool, Rect, Softmax, SquaredError)
+    BatchNorm, Chain, Conv, CrossEntropyError, Layer, LinTrans, MaxPool,
+    MultiscaleConvMax, Rect, SelectPyramidTop, Softmax, SquaredError, ToPyramid)
 from lib.nets import CRNet, DSNet, SRNet
 from lib.training import train
 
@@ -58,6 +58,21 @@ class LogReg(Chain):
             LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=1e-2),
             Softmax(), SquaredError())
 
+class ReConvMPMS(Chain):
+    def __init__(self, scale0, n_scales, n_chan):
+        super().__init__(
+            MultiscaleConvMax(
+                scale0=scale0, n_scales=n_scales, n_chan=n_chan,
+                supp=3, k_l2=k_l2, σ_w=1e-2),
+            BatchNorm(), Rect())
+
+class LogRegMS(Chain):
+    def __init__(self, scale0):
+        super().__init__(
+            SelectPyramidTop(scale0=scale0),
+            LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=1e-2),
+            Softmax(), SquaredError())
+
 ################################################################################
 # Define an optimizer.
 ################################################################################
@@ -78,6 +93,19 @@ for n_tf in [3]:
         root = [ReConvMP(32 * 2**i), root]
     root = [Input(), root]
     net = SRNet(x0_shape, y_shape, optimizer, root)
+    # net = SRNet(x0_shape, y_shape, optimizer,
+    #     [Input(),
+    #         [ToPyramid(n_scales=4),
+    #             [ReConvMPMS((32, 32), 4, 32),
+    #             [ReConvMPMS((32, 32), 4, 32),
+    #             [ReConvMPMS((32, 32), 4, 32),
+    #                 [ReConvMPMS((32, 32), 3, 64),
+    #                 [ReConvMPMS((16, 16), 3, 64),
+    #                 [ReConvMPMS((16, 16), 3, 64),
+    #                     [ReConvMPMS((16, 16), 2, 128),
+    #                     [ReConvMPMS((8, 8), 2, 128),
+    #                     [ReConvMPMS((8, 8), 2, 128),
+    #                         LogRegMS((8, 8))]]]]]]]]]]])
     name = 'Static Routing (n_tf=%i)' % n_tf
     desc = train(net, dataset, logging_period=1, name=name, hypers=(
         lambda t: {t_train: t}))

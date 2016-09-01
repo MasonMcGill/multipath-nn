@@ -77,6 +77,87 @@ class MaxPool(Layer):
         k_shape = (1, ϕ.supp, ϕ.supp, 1)
         self.x = tf.nn.max_pool(x, strides, k_shape, 'SAME')
 
+class GlobalMaxPool(Layer):
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        dims = tuple(x.get_shape().as_list()[1:-1])
+        self.x = tf.reduce_max(x, dims)
+
+################################################################################
+# Multiscale Transformation Layers
+################################################################################
+
+class ToPyramid(Layer):
+    default_hypers = dict(n_scales=1)
+
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        ϕ = self.hypers
+        h, w, c = x.get_shape().as_list()[1:]
+        s = []
+        for i in range(ϕ.n_scales):
+            h_i = h // 2**i
+            w_i = w // 2**i
+            x_i = tf.image.resize_images(x, h_i, w_i)
+            s.append(tf.reshape(x_i, (-1, h_i * w_i, c)))
+        self.x = tf.concat(1, s)
+
+class MultiscaleConvMax(Layer):
+    default_hypers = dict(
+        scale0=(1, 1), n_scales=1,
+        n_chan=1, supp=1, k_l2=0, σ_w=1)
+
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        ϕ, θ = self.hypers, self.params
+        n_in = x.get_shape()[2].value
+        n_pix = x.get_shape()[1].value
+        w_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
+        w_scale = ϕ.σ_w / ϕ.supp / np.sqrt(n_in)
+        θ.w_horz = tf.Variable(w_scale * tf.random_normal(w_shape))
+        θ.w_vert = tf.Variable(w_scale * tf.random_normal(w_shape))
+        θ.b = tf.Variable(tf.zeros(ϕ.n_chan))
+        s_in = []
+        i_x = 0
+        h, w = ϕ.scale0
+        while i_x + h * w <= n_pix:
+            s_in.append(tf.reshape(x[:, i_x:i_x+h*w, :], (-1, h, w, n_in)))
+            i_x += h * w
+            h //= 2
+            w //= 2
+        s_pool = [
+            tf.nn.max_pool(s, (1, 2, 2, 1), (1, 2, 2, 1), 'SAME')
+            for s in s_in]
+        s_out = [
+            tf.nn.conv2d(s_in[0], θ.w_horz, (1, 1, 1, 1), 'SAME') + θ.b,
+            *(tf.nn.conv2d(s_in[i], θ.w_horz, (1, 1, 1, 1), 'SAME') + θ.b
+              + tf.nn.conv2d(s_pool[i-1], θ.w_vert, (1, 1, 1, 1), 'SAME')
+              for i in range(1, len(s_in)))][-ϕ.n_scales:]
+        self.x = tf.concat(1, [
+            tf.reshape(s, (-1, np.prod(s.get_shape().as_list()[1:3]), ϕ.n_chan))
+            for s in s_out])
+        self.c_mod = ϕ.k_l2 * (
+            tf.reduce_sum(tf.square(θ.w_horz)) +
+            tf.reduce_sum(tf.square(θ.w_vert)))
+        self.n_ops = n_pix * ϕ.supp**2 * n_in * ϕ.n_chan
+
+class SelectPyramidTop(Layer):
+    default_hypers = dict(scale0=(1, 1))
+
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        ϕ = self.hypers
+        n_pix, n_chan = x.get_shape().as_list()[1:]
+        s = []
+        i_x = 0
+        h, w = ϕ.scale0
+        while i_x + h * w <= n_pix:
+            s.append(tf.reshape(x[:, i_x:i_x+h*w, :], (-1, h, w, n_chan)))
+            i_x += h * w
+            h //= 2
+            w //= 2
+        self.x = s[-1]
+
 ################################################################################
 # Regularization Layers
 ################################################################################
