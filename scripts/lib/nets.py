@@ -105,7 +105,7 @@ def route_sinks_ds_stat(ℓ, opts):
         route_ds(s, ℓ.p_tr, ℓ.p_ev, opts)
 
 def route_sinks_ds_dyn(ℓ, opts):
-    ℓ.router = LinTrans(n_chan=len(ℓ.sinks), k_l2=opts.k_l2)
+    ℓ.router = opts.router_gen(ℓ)
     ℓ.router.link(ℓ.x, None, opts.mode)
     π_tr = (
         opts.ϵ / len(ℓ.sinks)
@@ -142,13 +142,14 @@ def route_ds(ℓ, p_tr, p_ev, opts):
     else: route_sinks_ds_dyn(ℓ, opts)
 
 class DSNet(Net):
-    default_hypers = dict(k_cpt=0.0, k_l2=0.0, ϵ=0.1, λ=0.99)
+    default_hypers = dict(k_cpt=0.0, ϵ=0.1, λ=0.9)
 
-    def __init__(self, x0_shape, y_shape, optimizer, hypers, root):
+    def __init__(self, x0_shape, y_shape, router_gen, optimizer, hypers, root):
         super().__init__(x0_shape, y_shape, hypers, root)
         n_pts = tf.shape(self.x0)[0]
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
-                 Namespace(mode=self.mode, **vars(self.hypers)))
+                 Namespace(router_gen=router_gen, mode=self.mode,
+                           **vars(self.hypers)))
         c_gen = sum(ℓ.p_tr * ℓ.c_gen for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.hypers.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
@@ -194,7 +195,7 @@ def route_sinks_cr_stat(ℓ, opts):
     ℓ.c_cre = 0.0
 
 def route_sinks_cr_dyn(ℓ, opts):
-    ℓ.router = LinTrans(n_chan=len(ℓ.sinks), k_l2=opts.k_l2)
+    ℓ.router = opts.router_gen(ℓ)
     ℓ.router.link(ℓ.x, None, opts.mode)
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
@@ -246,15 +247,15 @@ def route_cr(ℓ, p_tr, p_ev, opts):
     else: route_sinks_cr_dyn(ℓ, opts)
 
 class CRNet(Net):
-    default_hypers = dict(
-        k_cpt=0.0, k_cre=1e-3, k_l2=0.0, ϵ=0.1, λ=0.99,
-        optimistic=False)
+    default_hypers = dict(k_cpt=0.0, k_cre=1e-3, ϵ=0.1, λ=0.99,
+                          optimistic=True)
 
-    def __init__(self, x0_shape, y_shape, optimizer, hypers, root):
+    def __init__(self, x0_shape, y_shape, router_gen, optimizer, hypers, root):
         super().__init__(x0_shape, y_shape, hypers, root)
         n_pts = tf.shape(self.x0)[0]
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
-                 Namespace(mode=self.mode, **vars(self.hypers)))
+                 Namespace(router_gen=router_gen, mode=self.mode,
+                           **vars(self.hypers)))
         c_gen = sum(ℓ.p_tr * ℓ.c_gen for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.hypers.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)

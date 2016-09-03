@@ -104,7 +104,7 @@ class ToPyramid(Layer):
 
 class MultiscaleConvMax(Layer):
     default_hypers = dict(
-        scale0=(1, 1), n_scales=1,
+        shape0=(1, 1), n_scales=1,
         n_chan=1, supp=1, k_l2=0, σ_w=1)
 
     def link(self, x, y, mode):
@@ -119,7 +119,7 @@ class MultiscaleConvMax(Layer):
         θ.b = tf.Variable(tf.zeros(ϕ.n_chan))
         s_in = []
         i_x = 0
-        h, w = ϕ.scale0
+        h, w = ϕ.shape0
         while i_x + h * w <= n_pix:
             s_in.append(tf.reshape(x[:, i_x:i_x+h*w, :], (-1, h, w, n_in)))
             i_x += h * w
@@ -142,21 +142,13 @@ class MultiscaleConvMax(Layer):
         self.n_ops = n_pix * ϕ.supp**2 * n_in * ϕ.n_chan
 
 class SelectPyramidTop(Layer):
-    default_hypers = dict(scale0=(1, 1))
+    default_hypers = dict(shape=(1, 1))
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
-        ϕ = self.hypers
+        h, w = self.hypers.shape
         n_pix, n_chan = x.get_shape().as_list()[1:]
-        s = []
-        i_x = 0
-        h, w = ϕ.scale0
-        while i_x + h * w <= n_pix:
-            s.append(tf.reshape(x[:, i_x:i_x+h*w, :], (-1, h, w, n_chan)))
-            i_x += h * w
-            h //= 2
-            w //= 2
-        self.x = s[-1]
+        self.x = tf.reshape(x[:, n_pix-h*w:, :], (-1, h, w, n_chan))
 
 ################################################################################
 # Regularization Layers

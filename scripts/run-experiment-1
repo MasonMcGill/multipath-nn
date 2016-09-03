@@ -27,14 +27,14 @@ y_shape = dataset.y_shape
 # Define network hyperparameters.
 ################################################################################
 
-k_cpts = [3e-9]# + [4**i * 1e-10 for i in range(7)]
+k_cpt = 0
 k_l2 = 1e-3
 
 ################################################################################
 # Allocate a log for the experiment results.
 ################################################################################
 
-log = {'sr': [], 'ds_casc': [], 'cr_casc': [],  'ds_tree': [],  'cr_tree': []}
+log = {'sr': [], 'dr': []}
 
 ################################################################################
 # Define network components.
@@ -43,35 +43,48 @@ log = {'sr': [], 'ds_casc': [], 'cr_casc': [],  'ds_tree': [],  'cr_tree': []}
 class Input(Layer):
     pass
 
-class ReConvMP(Chain):
+class ReConv(Chain):
     def __init__(self, n_chan):
-        conv_hypers = dict(n_chan=n_chan, supp=3, k_l2=k_l2, σ_w=1e-2)
         super().__init__(
-            Conv(**conv_hypers), BatchNorm(), Rect(),
-            Conv(**conv_hypers), BatchNorm(), Rect(),
-            Conv(**conv_hypers), BatchNorm(), Rect(),
-            MaxPool(stride=2, supp=2))
+            Conv(n_chan=n_chan, supp=3, k_l2=k_l2, σ_w=1e-2),
+            BatchNorm(), Rect())
+
+class ReConvMax(Chain):
+    def __init__(self, n_chan):
+        super().__init__(
+            Conv(n_chan=n_chan, supp=3, k_l2=k_l2, σ_w=1e-2),
+            BatchNorm(), Rect(), MaxPool(stride=2, supp=2))
 
 class LogReg(Chain):
     def __init__(self):
         super().__init__(
             LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=1e-2),
-            Softmax(), SquaredError())
+            Softmax(), CrossEntropyError())
 
-class ReConvMPMS(Chain):
-    def __init__(self, scale0, n_scales, n_chan):
+class ReConvMaxMS(Chain):
+    def __init__(self, shape0, n_scales, n_chan, turn=False):
         super().__init__(
             MultiscaleConvMax(
-                scale0=scale0, n_scales=n_scales, n_chan=n_chan,
-                supp=3, k_l2=k_l2, σ_w=1e-2),
+                shape0=shape0, n_scales=n_scales,
+                n_chan=n_chan, supp=3, k_l2=k_l2, σ_w=1e-2),
             BatchNorm(), Rect())
+        self.hypers.turn = turn
 
 class LogRegMS(Chain):
-    def __init__(self, scale0):
+    def __init__(self, shape0):
         super().__init__(
-            SelectPyramidTop(scale0=scale0),
+            SelectPyramidTop(shape0=shape0),
             LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=1e-2),
-            Softmax(), SquaredError())
+            Softmax(), CrossEntropyError())
+
+################################################################################
+# Define a router generator.
+################################################################################
+
+def router_gen(ℓ):
+    return Chain(
+        SelectPyramidTop(shape0=(4, 4)),
+        LinTrans(n_chan=len(ℓ.sinks), k_l2=k_l2))
 
 ################################################################################
 # Define an optimizer.
@@ -85,125 +98,51 @@ optimizer = tf.train.MomentumOptimizer(λ_learn, 0.9)
 # Train a statically-routed network.
 ################################################################################
 
-print('\n —— Training statically-routed networks... ——\n')
+print('\n —— Training a statically-routed network... ——\n')
 
-for n_tf in [3]:
-    root = LogReg()
-    for i in reversed(range(n_tf)):
-        root = [ReConvMP(32 * 2**i), root]
-    root = [Input(), root]
-    net = SRNet(x0_shape, y_shape, optimizer, root)
-    # net = SRNet(x0_shape, y_shape, optimizer,
-    #     [Input(),
-    #         [ToPyramid(n_scales=4),
-    #             [ReConvMPMS((32, 32), 4, 32),
-    #             [ReConvMPMS((32, 32), 4, 32),
-    #             [ReConvMPMS((32, 32), 4, 32),
-    #                 [ReConvMPMS((32, 32), 3, 64),
-    #                 [ReConvMPMS((16, 16), 3, 64),
-    #                 [ReConvMPMS((16, 16), 3, 64),
-    #                     [ReConvMPMS((16, 16), 2, 128),
-    #                     [ReConvMPMS((8, 8), 2, 128),
-    #                     [ReConvMPMS((8, 8), 2, 128),
-    #                         LogRegMS((8, 8))]]]]]]]]]]])
-    name = 'Static Routing (n_tf=%i)' % n_tf
-    desc = train(net, dataset, logging_period=1, name=name, hypers=(
-        lambda t: {t_train: t}))
-    log['sr'].append({'n_tf': n_tf, 'net': desc})
+net = SRNet(
+    x0_shape, y_shape, optimizer,
+    [ToPyramid(n_scales=4),
+        [ReConvMaxMS((32, 32), 4, 32),
+        [ReConvMaxMS((32, 32), 4, 32),
+        [ReConvMaxMS((32, 32), 4, 32),
+            [ReConvMaxMS((32, 32), 3, 64),
+            [ReConvMaxMS((16, 16), 3, 64),
+            [ReConvMaxMS((16, 16), 3, 64),
+                [ReConvMaxMS((16, 16), 2, 128),
+                [ReConvMaxMS((8, 8), 2, 128),
+                [ReConvMaxMS((8, 8), 2, 128),
+                    LogRegMS((8, 8))]]]]]]]]]])
+
+log['sr'] = train(
+    net, dataset, logging_period=1,
+    name='Statically-Routing Network',
+    hypers=(lambda t: {t_train: t}))
 
 ################################################################################
-# Train decision smoothing cascades.
+# Train a dynamically-routed network
 ################################################################################
 
-print('\n —— Training decision smoothing cascades... ——\n')
+print('\n —— Training a dynamically-routed network... ——\n')
 
-for k_cpt in k_cpts:
-    hypers = dict(k_cpt=k_cpt, k_l2=k_l2)
-    net = DSNet(x0_shape, y_shape, optimizer, hypers,
-        [Input(), LogReg(),
-            [ReConvMP(32), LogReg(),
-                [ReConvMP(64), LogReg(),
-                    [ReConvMP(128), LogReg()]]]])
-    name = 'Decision Smoothing Cascade (k_cpt=%.1e)' % k_cpt
-    desc = train(net, dataset, logging_period=1, name=name, hypers=(
-        lambda t: {t_train: t}))
-    log['ds_casc'].append({'k_cpt': k_cpt, 'net': desc})
+net = DSNet(
+    x0_shape, y_shape, router_gen, optimizer,
+    dict(k_cpt=k_cpt, k_l2=k_l2, ϵ=0.01),
+    [ToPyramid(n_scales=4), LogRegMS((32, 32)),
+        [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
+        [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
+        [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
+            [ReConvMaxMS((32, 32), 3, 64), LogRegMS((16, 16)),
+            [ReConvMaxMS((16, 16), 3, 64), LogRegMS((16, 16)),
+            [ReConvMaxMS((16, 16), 3, 64), LogRegMS((16, 16)),
+                [ReConvMaxMS((16, 16), 2, 128), LogRegMS((8, 8)),
+                [ReConvMaxMS((8, 8), 2, 128, turn=True), LogRegMS((8, 8)),
+                [ReConvMaxMS((8, 8), 2, 128), LogRegMS((8, 8))]]]]]]]]]])
 
-################################################################################
-# Train cost regressing cascades.
-################################################################################
-
-print('\n —— Training cost regression cascades... ——\n')
-
-for k_cpt in k_cpts:
-    hypers = dict(k_cpt=k_cpt, k_l2=k_l2, optimistic=True)
-    net = CRNet(x0_shape, y_shape, optimizer, hypers,
-        [Input(), LogReg(),
-            [ReConvMP(32), LogReg(),
-                [ReConvMP(64), LogReg(),
-                    [ReConvMP(128), LogReg()]]]])
-    name = 'Cost Regression Cascade (k_cpt=%.1e)' % k_cpt
-    desc = train(net, dataset, logging_period=1, name=name, hypers=(
-        lambda t: {t_train: t}))
-    log['cr_casc'].append({'k_cpt': k_cpt, 'net': desc})
-
-################################################################################
-# Train decision smoothing trees.
-################################################################################
-
-print('\n —— Training decision smoothing trees... ——\n')
-
-for k_cpt in k_cpts:
-    hypers = dict(k_cpt=k_cpt, k_l2=k_l2)
-    net = DSNet(x0_shape, y_shape, optimizer, hypers,
-        [Input(), LogReg(),
-            [ReConvMP(32), LogReg(),
-                [ReConvMP(64), LogReg(),
-                    [ReConvMP(128), LogReg()],
-                    [ReConvMP(128), LogReg()]],
-                [ReConvMP(64), LogReg(),
-                    [ReConvMP(128), LogReg()],
-                    [ReConvMP(128), LogReg()]]],
-            [ReConvMP(32), LogReg(),
-                [ReConvMP(64), LogReg(),
-                    [ReConvMP(128), LogReg()],
-                    [ReConvMP(128), LogReg()]],
-                [ReConvMP(64), LogReg(),
-                    [ReConvMP(128), LogReg()],
-                    [ReConvMP(128), LogReg()]]]])
-    name = 'Decision Smoothing Tree (k_cpt=%.1e)' % k_cpt
-    desc = train(net, dataset, logging_period=1, name=name, hypers=(
-        lambda t: {t_train: t}))
-    log['ds_tree'].append({'k_cpt': k_cpt, 'net': desc})
-
-################################################################################
-# Train cost regressing trees.
-################################################################################
-
-print('\n —— Training cost regression trees... ——\n')
-
-for k_cpt in k_cpts:
-    hypers = dict(k_cpt=k_cpt, k_l2=k_l2, optimistic=True)
-    net = CRNet(x0_shape, y_shape, optimizer, hypers,
-        [Input(), LogReg(),
-            [ReConvMP(32), LogReg(),
-                [ReConvMP(64), LogReg(),
-                    [ReConvMP(128), LogReg()],
-                    [ReConvMP(128), LogReg()]],
-                [ReConvMP(64), LogReg(),
-                    [ReConvMP(128), LogReg()],
-                    [ReConvMP(128), LogReg()]]],
-            [ReConvMP(32), LogReg(),
-                [ReConvMP(64), LogReg(),
-                    [ReConvMP(128), LogReg()],
-                    [ReConvMP(128), LogReg()]],
-                [ReConvMP(64), LogReg(),
-                    [ReConvMP(128), LogReg()],
-                    [ReConvMP(128), LogReg()]]]])
-    name = 'Cost Regression Tree (k_cpt=%.1e)' % k_cpt
-    desc = train(net, dataset, logging_period=5, name=name, hypers=(
-        lambda t: {t_train: t}))
-    log['cr_tree'].append({'k_cpt': k_cpt, 'net': desc})
+log['dr'] = train(
+    net, dataset, logging_period=1,
+    name=('Dynamically-Routed Network (k_cpt=%.1e)' % k_cpt),
+    hypers=(lambda t: {t_train: t}))
 
 ################################################################################
 # Save the results.
