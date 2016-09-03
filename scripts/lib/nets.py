@@ -109,7 +109,7 @@ def route_sinks_ds_dyn(ℓ, opts):
     ℓ.router.link(ℓ.x, None, opts.mode)
     π_tr = (
         opts.ϵ / len(ℓ.sinks)
-        + (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x))
+        + (1 - opts.ϵ) * tf.nn.softmax(opts.τ * ℓ.router.x))
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
@@ -142,7 +142,7 @@ def route_ds(ℓ, p_tr, p_ev, opts):
     else: route_sinks_ds_dyn(ℓ, opts)
 
 class DSNet(Net):
-    default_hypers = dict(k_cpt=0.0, ϵ=0.1, λ=0.9)
+    default_hypers = dict(k_cpt=0.0, ϵ=0.1, λ=0.9, τ=0.1)
 
     def __init__(self, x0_shape, y_shape, router_gen, optimizer, hypers, root):
         super().__init__(x0_shape, y_shape, hypers, root)
