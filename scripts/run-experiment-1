@@ -11,7 +11,8 @@ import tensorflow as tf
 from lib.data import Dataset
 from lib.layers import (
     BatchNorm, Chain, Conv, CrossEntropyError, Layer, LinTrans, MaxPool,
-    MultiscaleConvMax, Rect, SelectPyramidTop, Softmax, SquaredError, ToPyramid)
+    MultiscaleConvMax, MultiscaleLLN, Rect, SelectPyramidTop, Softmax,
+    SquaredError, ToPyramid)
 from lib.nets import CRNet, DSNet, SRNet
 from lib.training import train
 
@@ -19,7 +20,7 @@ from lib.training import train
 # Load data.
 ################################################################################
 
-dataset = Dataset('data/cifar-10-lln.mat', n_vl=1280)
+dataset = Dataset('data/cifar-10.mat', normalize=False, n_vl=1280)
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
 
@@ -61,14 +62,20 @@ class LogReg(Chain):
             LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=1e-2),
             Softmax(), CrossEntropyError())
 
+class ToPyramidLLN(Chain):
+    def __init__(self, shape0, n_scales):
+        super().__init__(
+            ToPyramid(n_scales=n_scales),
+            MultiscaleLLN(shape0=shape0),
+            BatchNorm())
+
 class ReConvMaxMS(Chain):
-    def __init__(self, shape0, n_scales, n_chan, turn=False):
+    def __init__(self, shape0, n_scales, n_chan):
         super().__init__(
             MultiscaleConvMax(
                 shape0=shape0, n_scales=n_scales,
                 n_chan=n_chan, supp=3, k_l2=k_l2, σ_w=1e-2),
             BatchNorm(), Rect())
-        self.hypers.turn = turn
 
 class LogRegMS(Chain):
     def __init__(self, shape0):
@@ -102,7 +109,7 @@ print('\n —— Training a statically-routed network... ——\n')
 
 net = SRNet(
     x0_shape, y_shape, optimizer,
-    [ToPyramid(n_scales=4),
+    [ToPyramidLLN((32, 32), 4),
         [ReConvMaxMS((32, 32), 4, 32),
         [ReConvMaxMS((32, 32), 4, 32),
         [ReConvMaxMS((32, 32), 4, 32),
@@ -128,7 +135,7 @@ print('\n —— Training a dynamically-routed network... ——\n')
 net = DSNet(
     x0_shape, y_shape, router_gen, optimizer,
     dict(k_cpt=k_cpt, k_l2=k_l2, ϵ=0.01),
-    [ToPyramid(n_scales=4), LogRegMS((32, 32)),
+    [ToPyramidLLN((32, 32), 4), LogRegMS((32, 32)),
         [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
         [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
         [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
@@ -136,7 +143,7 @@ net = DSNet(
             [ReConvMaxMS((16, 16), 3, 64), LogRegMS((16, 16)),
             [ReConvMaxMS((16, 16), 3, 64), LogRegMS((16, 16)),
                 [ReConvMaxMS((16, 16), 2, 128), LogRegMS((8, 8)),
-                [ReConvMaxMS((8, 8), 2, 128, turn=True), LogRegMS((8, 8)),
+                [ReConvMaxMS((8, 8), 2, 128), LogRegMS((8, 8)),
                 [ReConvMaxMS((8, 8), 2, 128), LogRegMS((8, 8))]]]]]]]]]])
 
 log['dr'] = train(

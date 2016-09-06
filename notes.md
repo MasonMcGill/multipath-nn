@@ -16,3 +16,14 @@
 - Spiking (experiment 3)
 - Growing vs. planting (possible follow-up)
 - Hybrid convolutional/fully-connected layers (possible follow-up)
+
+# Performance Measurements
+
+- Single Scale, Confident Error — 83-86% accuracy
+- Single Scale, Hedging Error — 84% accuracy
+- Multicale, Hedging Error — 81% accuracy
+- Multicale, Hedging Error, ResNet — 78% accuracy, degrading to 70%
+- Single Scale, Confident Error, No LLN — 76% accuracy
+- Multicale, Confident Error, Multiscale LLN — 85% accuracy, degrading to 83%
+- Multicale, Confident Error, ResNet, Multiscale LLN, Discrete LR Steps — 85.5% accuracy, degrading to 84.5%
+- Multicale, Confident Error, Multiscale LLN, Discrete LR Steps — 87.5% accuracy

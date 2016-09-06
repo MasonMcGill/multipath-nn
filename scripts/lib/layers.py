@@ -87,25 +87,63 @@ class GlobalMaxPool(Layer):
 # Multiscale Transformation Layers
 ################################################################################
 
+def to_pyramid(x, n_scales):
+    h, w = x.get_shape().as_list()[1:3]
+    return [tf.image.resize_images(x, h // 2**i, w // 2**i)
+            for i in range(n_scales)]
+
+def pack_pyramid(x):
+    n_chan = x[0].get_shape()[3].value
+    return tf.concat(1, [
+        tf.reshape(x_i, (-1, np.prod(x_i.get_shape().as_list()[1:3]), n_chan))
+        for x_i in x])
+
+def unpack_pyramid(x, shape0):
+    n_pix, n_chan = x.get_shape().as_list()[1:]
+    h, w = shape0
+    x_unpacked = []
+    i = 0
+    while i + h * w <= n_pix:
+        x_unpacked.append(tf.reshape(x[:, i:i+h*w, :], (-1, h, w, n_chan)))
+        i += h * w
+        h //= 2
+        w //= 2
+    return x_unpacked
+
 class ToPyramid(Layer):
     default_hypers = dict(n_scales=1)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
+        self.x = pack_pyramid(to_pyramid(x, self.hypers.n_scales))
+
+class MultiscaleLLN(Layer):
+    default_hypers = dict(shape0=(1, 1), σ=3, ϵ=1e-3)
+
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
         ϕ = self.hypers
-        h, w, c = x.get_shape().as_list()[1:]
-        s = []
-        for i in range(ϕ.n_scales):
-            h_i = h // 2**i
-            w_i = w // 2**i
-            x_i = tf.image.resize_images(x, h_i, w_i)
-            s.append(tf.reshape(x_i, (-1, h_i * w_i, c)))
-        self.x = tf.concat(1, s)
+        s = int(np.ceil(2 * ϕ.σ))
+        u = np.linspace(-s, s, 2 * s + 1)[:, None, None, None]
+        v = np.linspace(-s, s, 2 * s + 1)[:, None, None]
+        k = (np.exp(-(u**2 + v**2) / (2 * ϕ.σ**2)) / (2 * np.pi * ϕ.σ**2)
+             * [[0.2989], [0.5870], [0.1140]])
+        x_out_unpacked = []
+        for x_i in unpack_pyramid(x, ϕ.shape0):
+            h, w = x_i.get_shape().as_list()[1:3]
+            x_i_lum = tf.nn.conv2d(
+                tf.pad(x_i, [[0, 0], [s, s], [s, s], [0, 0]]),
+                k, (1, 1, 1, 1), 'SAME')[:, s:s+h, s:s+w, :]
+            x_i_density = tf.nn.conv2d(
+                tf.pad(tf.ones_like(x_i), [[0, 0], [s, s], [s, s], [0, 0]]),
+                k, (1, 1, 1, 1), 'SAME')[:, s:s+h, s:s+w, :]
+            x_out_unpacked.append(x_i / (x_i_lum / x_i_density + ϕ.ϵ))
+        self.x = pack_pyramid(x_out_unpacked)
 
 class MultiscaleConvMax(Layer):
     default_hypers = dict(
-        shape0=(1, 1), n_scales=1,
-        n_chan=1, supp=1, k_l2=0, σ_w=1)
+        shape0=(1, 1), n_scales=1, n_chan=1,
+        supp=1, k_l2=0, σ_w=1)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -117,14 +155,7 @@ class MultiscaleConvMax(Layer):
         θ.w_horz = tf.Variable(w_scale * tf.random_normal(w_shape))
         θ.w_vert = tf.Variable(w_scale * tf.random_normal(w_shape))
         θ.b = tf.Variable(tf.zeros(ϕ.n_chan))
-        s_in = []
-        i_x = 0
-        h, w = ϕ.shape0
-        while i_x + h * w <= n_pix:
-            s_in.append(tf.reshape(x[:, i_x:i_x+h*w, :], (-1, h, w, n_in)))
-            i_x += h * w
-            h //= 2
-            w //= 2
+        s_in = unpack_pyramid(x, ϕ.shape0)
         s_pool = [
             tf.nn.max_pool(s, (1, 2, 2, 1), (1, 2, 2, 1), 'SAME')
             for s in s_in]
@@ -133,9 +164,7 @@ class MultiscaleConvMax(Layer):
             *(tf.nn.conv2d(s_in[i], θ.w_horz, (1, 1, 1, 1), 'SAME') + θ.b
               + tf.nn.conv2d(s_pool[i-1], θ.w_vert, (1, 1, 1, 1), 'SAME')
               for i in range(1, len(s_in)))][-ϕ.n_scales:]
-        self.x = tf.concat(1, [
-            tf.reshape(s, (-1, np.prod(s.get_shape().as_list()[1:3]), ϕ.n_chan))
-            for s in s_out])
+        self.x = pack_pyramid(s_out)
         self.c_mod = ϕ.k_l2 * (
             tf.reduce_sum(tf.square(θ.w_horz)) +
             tf.reduce_sum(tf.square(θ.w_vert)))
