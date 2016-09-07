@@ -194,16 +194,12 @@ def route_sinks_cr_dyn(ℓ, opts):
     ℓ.c_opt = (
         ℓ.c_err + opts.k_cpt * ℓ.n_ops
         + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
-    if opts.optimistic:
-        ℓ.c_cre = opts.k_cre * sum(
+    ℓ.c_cre = tf.cond(opts.route_stat, lambda: tf.constant(0.0), lambda: (
+        opts.k_cre * sum(
             π_tr[:, i] * tf.square(
-                ℓ.router.x[:, i] - tf.stop_gradient(s.c_opt))
-            for i, s in enumerate(ℓ.sinks))
-    else:
-        ℓ.c_cre = opts.k_cre * sum(
-            π_tr[:, i] * tf.square(
-                ℓ.router.x[:, i] - tf.stop_gradient(s.c_ev))
-            for i, s in enumerate(ℓ.sinks))
+                ℓ.router.x[:, i] - tf.stop_gradient(
+                    s.c_opt if opts.optimistic else s.c_ev))
+            for i, s in enumerate(ℓ.sinks))))
 
 def route_cr(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
