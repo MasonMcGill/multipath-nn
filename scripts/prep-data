@@ -7,17 +7,6 @@ from urllib.request import urlretrieve
 
 import numpy as np
 import scipy.io as io
-import scipy.ndimage.filters as flt
-
-################################################################################
-# Define local luminance normalization.
-################################################################################
-
-def normalize(x0, σ=3, ϵ=1e-3):
-    return x0 / (
-        0.2989 * flt.gaussian_filter(x0[..., 0], σ) +
-        0.5870 * flt.gaussian_filter(x0[..., 1], σ) +
-        0.1140 * flt.gaussian_filter(x0[..., 2], σ) + ϵ)[..., None]
 
 ################################################################################
 # Download MNIST.
@@ -109,21 +98,6 @@ io.savemat('data/cifar-10.mat', cifar10_b, do_compression=True)
 print(80 * '\b \b' + 'Reformatting CIFAR-10 — done!')
 
 ################################################################################
-# Perform Local Luminance Normalization on CIFAR-10.
-################################################################################
-
-print('Normalizing CIFAR-10...', end='', flush=True)
-
-cifar10_b_lln = {
-    'x0_tr': np.array([normalize(x0) for x0 in cifar10_b['x0_tr']]),
-    'x0_ts': np.array([normalize(x0) for x0 in cifar10_b['x0_ts']]),
-    'y_tr': cifar10_b['y_tr'],
-    'y_ts': cifar10_b['y_ts']}
-
-io.savemat('data/cifar-10-lln.mat', cifar10_b_lln, do_compression=True)
-print(80 * '\b \b' + 'Normalizing CIFAR-10 — done!')
-
-################################################################################
 # Download CIFAR-100.
 ################################################################################
 
@@ -161,18 +135,3 @@ cifar100_b = {
 makedirs('data/', exist_ok=True)
 io.savemat('data/cifar-100.mat', cifar100_b, do_compression=True)
 print(80 * '\b \b' + 'Reformatting CIFAR-100 — done!')
-
-################################################################################
-# Perform Local Luminance Normalization on CIFAR-100.
-################################################################################
-
-print('Normalizing CIFAR-100...', end='', flush=True)
-
-cifar100_b_lln = {
-    'x0_tr': np.array([normalize(x0) for x0 in cifar100_b['x0_tr']]),
-    'x0_ts': np.array([normalize(x0) for x0 in cifar100_b['x0_ts']]),
-    'y_tr': cifar100_b['y_tr'],
-    'y_ts': cifar100_b['y_ts']}
-
-io.savemat('data/cifar-100-lln.mat', cifar100_b_lln, do_compression=True)
-print(80 * '\b \b' + 'Normalizing CIFAR-100 — done!')

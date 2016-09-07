@@ -63,9 +63,6 @@ class Net(metaclass=ABCMeta):
     def train(self, x0, y, hypers={}):
         pass
 
-    def validate(self, x0, y, hypers={}):
-        pass
-
     def eval(self, target, x0, y, hypers={}):
         pass
 
@@ -124,31 +121,12 @@ def route_sinks_ds_dyn(ℓ, opts):
 def route_ds(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    ℓ.μ_tr = tf.Variable(0.0, trainable=False)
-    ℓ.μ_vl = tf.Variable(0.0, trainable=False)
-    ℓ.v_tr = tf.Variable(1.0, trainable=False)
-    ℓ.v_vl = tf.Variable(1.0, trainable=False)
-    μ_batch = (
-        tf.reduce_sum(ℓ.p_tr * ℓ.c_err)
-        / tf.reduce_sum(ℓ.p_tr))
-    v_batch = (
-        tf.reduce_sum(ℓ.p_tr * tf.square(ℓ.c_err - μ_batch))
-        / tf.reduce_sum(ℓ.p_tr))
-    ℓ.update_μv_tr = tf.group(
-        tf.assign(ℓ.μ_tr, opts.λ * ℓ.μ_tr + (1 - opts.λ) * μ_batch),
-        tf.assign(ℓ.v_tr, opts.λ * ℓ.v_tr + (1 - opts.λ) * v_batch))
-    ℓ.update_μv_vl = tf.group(
-        tf.assign(ℓ.μ_vl, opts.λ * ℓ.μ_vl + (1 - opts.λ) * μ_batch),
-        tf.assign(ℓ.v_vl, opts.λ * ℓ.v_vl + (1 - opts.λ) * v_batch))
-    ℓ.c_gen = (
-        tf.sqrt((ℓ.v_vl + 1e-3) / (ℓ.v_tr + 1e-3))
-        * (ℓ.c_err - ℓ.μ_tr) + ℓ.μ_vl)
     if len(ℓ.sinks) < 2: route_sinks_ds_stat(ℓ, opts)
     else: route_sinks_ds_dyn(ℓ, opts)
 
 class DSNet(Net):
     default_hypers = dict(
-        k_cpt=0.0, ϵ=0.1, λ=0.9, τ=10,
+        k_cpt=0.0, ϵ=0.1, τ=1,
         route_stat=tf.constant(False))
 
     def __init__(self, x0_shape, y_shape, router_gen, optimizer, hypers, root):
@@ -157,15 +135,13 @@ class DSNet(Net):
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, mode=self.mode,
                            **vars(self.hypers)))
-        c_gen = sum(ℓ.p_tr * ℓ.c_gen for ℓ in self.layers)
+        c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.hypers.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
                     for ℓ in self.layers)
-        c_tr = c_gen + c_cpt + c_mod
-        with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
-            self._train_op = minimize_expected(
-                self, tf.reduce_mean(c_tr), optimizer)
-        self._validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
+        c_tr = c_err + c_cpt + c_mod
+        self._train_op = minimize_expected(
+            self, tf.reduce_mean(c_tr), optimizer)
         self._sess = tf.Session()
         self._sess.run(tf.initialize_all_variables())
 
@@ -175,10 +151,6 @@ class DSNet(Net):
     def train(self, x0, y, hypers={}):
         self._sess.run(self._train_op, {
             self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
-
-    def validate(self, x0, y, hypers={}):
-        self._sess.run(self._validate_op, {
-            self.x0: x0, self.y: y, **hypers})
 
     def eval(self, target, x0, y, hypers={}):
         return self._sess.run(target, {
@@ -216,11 +188,11 @@ def route_sinks_cr_dyn(ℓ, opts):
     for i, s in enumerate(ℓ.sinks):
         route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
     ℓ.c_ev = (
-        ℓ.c_gen + opts.k_cpt * ℓ.n_ops
+        ℓ.c_err + opts.k_cpt * ℓ.n_ops
         + sum(π_ev[:, i] * s.c_ev
               for i, s in enumerate(ℓ.sinks)))
     ℓ.c_opt = (
-        ℓ.c_gen + opts.k_cpt * ℓ.n_ops
+        ℓ.c_err + opts.k_cpt * ℓ.n_ops
         + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
     if opts.optimistic:
         ℓ.c_cre = opts.k_cre * sum(
@@ -236,31 +208,13 @@ def route_sinks_cr_dyn(ℓ, opts):
 def route_cr(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    ℓ.μ_tr = tf.Variable(0.0, trainable=False)
-    ℓ.μ_vl = tf.Variable(0.0, trainable=False)
-    ℓ.v_tr = tf.Variable(1.0, trainable=False)
-    ℓ.v_vl = tf.Variable(1.0, trainable=False)
-    μ_batch = (
-        tf.reduce_sum(ℓ.p_tr * ℓ.c_err)
-        / tf.reduce_sum(ℓ.p_tr))
-    v_batch = (
-        tf.reduce_sum(ℓ.p_tr * tf.square(ℓ.c_err - μ_batch))
-        / tf.reduce_sum(ℓ.p_tr))
-    ℓ.update_μv_tr = tf.group(
-        tf.assign(ℓ.μ_tr, opts.λ * ℓ.μ_tr + (1 - opts.λ) * μ_batch),
-        tf.assign(ℓ.v_tr, opts.λ * ℓ.v_tr + (1 - opts.λ) * v_batch))
-    ℓ.update_μv_vl = tf.group(
-        tf.assign(ℓ.μ_vl, opts.λ * ℓ.μ_vl + (1 - opts.λ) * μ_batch),
-        tf.assign(ℓ.v_vl, opts.λ * ℓ.v_vl + (1 - opts.λ) * v_batch))
-    ℓ.c_gen = (
-        tf.sqrt((ℓ.v_vl + 1e-3) / (ℓ.v_tr + 1e-3))
-        * (ℓ.c_err - ℓ.μ_tr) + ℓ.μ_vl)
     if len(ℓ.sinks) < 2: route_sinks_cr_stat(ℓ, opts)
     else: route_sinks_cr_dyn(ℓ, opts)
 
 class CRNet(Net):
-    default_hypers = dict(k_cpt=0.0, k_cre=1e-3, ϵ=0.1, λ=0.99,
-                          optimistic=True, route_stat=tf.constant(False))
+    default_hypers = dict(
+        k_cpt=0.0, k_cre=1e-3, ϵ=0.1,
+        optimistic=True, route_stat=tf.constant(False))
 
     def __init__(self, x0_shape, y_shape, router_gen, optimizer, hypers, root):
         super().__init__(x0_shape, y_shape, hypers, root)
@@ -268,15 +222,13 @@ class CRNet(Net):
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, mode=self.mode,
                            **vars(self.hypers)))
-        c_gen = sum(ℓ.p_tr * ℓ.c_gen for ℓ in self.layers)
+        c_err = sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * self.hypers.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
         c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
-        c_tr = c_gen + c_cpt + c_cre + c_mod
-        with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
-            self._train_op = minimize_expected(
-                self, tf.reduce_mean(c_tr), optimizer, 1 / self.hypers.k_cre)
-        self._validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
+        c_tr = c_err + c_cpt + c_cre + c_mod
+        self._train_op = minimize_expected(
+            self, tf.reduce_mean(c_tr), optimizer, 1 / self.hypers.k_cre)
         self._sess = tf.Session()
         self._sess.run(tf.initialize_all_variables())
 
@@ -286,10 +238,6 @@ class CRNet(Net):
     def train(self, x0, y, hypers={}):
         self._sess.run(self._train_op, {
             self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
-
-    def validate(self, x0, y, hypers={}):
-        self._sess.run(self._validate_op, {
-            self.x0: x0, self.y: y, **hypers})
 
     def eval(self, target, x0, y, hypers={}):
         return self._sess.run(target, {

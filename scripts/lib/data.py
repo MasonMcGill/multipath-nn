@@ -18,23 +18,12 @@ def batches(x0, y, n):
 ################################################################################
 
 class Dataset:
-    def __init__(self, path, n_vl=0, normalize=True, ϵ=1e-3):
+    def __init__(self, path):
         archive = io.loadmat(path)
         self.x0_tr = archive['x0_tr']
         self.x0_ts = archive['x0_ts']
         self.y_tr = archive['y_tr']
         self.y_ts = archive['y_ts']
-        if normalize:
-            self.x0_tr -= np.mean(self.x0_tr, (0, 1, 2))
-            self.x0_tr /= np.std(self.x0_tr, (0, 1, 2)) + ϵ
-            self.x0_ts -= np.mean(self.x0_tr, (0, 1, 2))
-            self.x0_ts /= np.std(self.x0_tr, (0, 1, 2)) + ϵ
-        if n_vl > 0:
-            order = rand.permutation(len(self.x0_tr))
-            self.x0_vl = np.take(self.x0_tr, order[:n_vl], axis=0)
-            self.y_vl = np.take(self.y_tr, order[:n_vl], axis=0)
-            self.x0_tr = np.take(self.x0_tr, order[n_vl:], axis=0)
-            self.y_tr = np.take(self.y_tr, order[n_vl:], axis=0)
 
     @property
     def x0_shape(self):
@@ -49,6 +38,3 @@ class Dataset:
 
     def test_batches(self, n=512):
         yield from batches(self.x0_ts, self.y_ts, n)
-
-    def validation_batches(self, n=512):
-        yield from batches(self.x0_vl, self.y_vl, n)

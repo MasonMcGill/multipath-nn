@@ -20,7 +20,7 @@ from lib.training import train
 # Load data.
 ################################################################################
 
-dataset = Dataset('data/cifar-10.mat', normalize=False, n_vl=1280)
+dataset = Dataset('data/cifar-10.mat')
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
 
@@ -28,7 +28,7 @@ y_shape = dataset.y_shape
 # Define network hyperparameters.
 ################################################################################
 
-k_cpt = 0
+k_cpt = 1e-9
 k_l2 = 1e-3
 
 ################################################################################
@@ -91,6 +91,7 @@ class LogRegMS(Chain):
 def router_gen(ℓ):
     return Chain(
         SelectPyramidTop(shape0=(4, 4)),
+        LinTrans(n_chan=16, k_l2=k_l2), Rect(),
         LinTrans(n_chan=len(ℓ.sinks), k_l2=k_l2))
 
 ################################################################################
@@ -100,6 +101,10 @@ def router_gen(ℓ):
 t_train = tf.placeholder(tf.float32, ())
 λ_learn = 0.1 / 2**(t_train // 10)
 optimizer = tf.train.MomentumOptimizer(λ_learn, 0.9)
+
+route_stat = t_train < 1
+ϵ = 0.1
+τ = 1
 
 ################################################################################
 # Train a statically-routed network.
@@ -123,7 +128,7 @@ net = SRNet(
 
 log['sr'] = train(
     net, dataset, logging_period=1,
-    name='Statically-Routing Network',
+    name='Statically-Routed Network',
     hypers=(lambda t: {t_train: t}))
 
 ################################################################################
@@ -134,7 +139,7 @@ print('\n —— Training a dynamically-routed network... ——\n')
 
 net = DSNet(
     x0_shape, y_shape, router_gen, optimizer,
-    dict(k_cpt=k_cpt, k_l2=k_l2, ϵ=0.01),
+    dict(k_cpt=k_cpt, k_l2=k_l2, ϵ=ϵ, τ=τ, route_stat=route_stat),
     [ToPyramidLLN((32, 32), 4), LogRegMS((32, 32)),
         [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
         [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
@@ -148,7 +153,7 @@ net = DSNet(
 
 log['dr'] = train(
     net, dataset, logging_period=1,
-    name=('Dynamically-Routed Network (k_cpt=%.1e)' % k_cpt),
+    name='Dynamically-Routed Network',
     hypers=(lambda t: {t_train: t}))
 
 ################################################################################
