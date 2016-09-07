@@ -10,9 +10,8 @@ import tensorflow as tf
 
 from lib.data import Dataset
 from lib.layers import (
-    BatchNorm, Chain, Conv, CrossEntropyError, Layer, LinTrans, MaxPool,
-    MultiscaleConvMax, MultiscaleLLN, Rect, SelectPyramidTop, Softmax,
-    SquaredError, ToPyramid)
+    BatchNorm, Chain, CrossEntropyError, LinTrans, MultiscaleConvMax,
+    MultiscaleLLN, Rect, SelectPyramidTop, Softmax, ToPyramid)
 from lib.nets import CRNet, DSNet, SRNet
 from lib.training import train
 
@@ -28,39 +27,18 @@ y_shape = dataset.y_shape
 # Define network hyperparameters.
 ################################################################################
 
+t_train = tf.placeholder(tf.float32, ())
+λ_learn = 0.1 / 2**(t_train // 10)
+optimizer = tf.train.MomentumOptimizer(λ_learn, 0.9)
+route_stat = t_train < 1
 k_cpt = 1e-9
 k_l2 = 1e-3
-
-################################################################################
-# Allocate a log for the experiment results.
-################################################################################
-
-log = {'sr': [], 'dr': []}
+ϵ = 0.1
+τ = 1
 
 ################################################################################
 # Define network components.
 ################################################################################
-
-class Input(Layer):
-    pass
-
-class ReConv(Chain):
-    def __init__(self, n_chan):
-        super().__init__(
-            Conv(n_chan=n_chan, supp=3, k_l2=k_l2, σ_w=1e-2),
-            BatchNorm(), Rect())
-
-class ReConvMax(Chain):
-    def __init__(self, n_chan):
-        super().__init__(
-            Conv(n_chan=n_chan, supp=3, k_l2=k_l2, σ_w=1e-2),
-            BatchNorm(), Rect(), MaxPool(stride=2, supp=2))
-
-class LogReg(Chain):
-    def __init__(self):
-        super().__init__(
-            LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=1e-2),
-            Softmax(), CrossEntropyError())
 
 class ToPyramidLLN(Chain):
     def __init__(self, shape0, n_scales):
@@ -69,7 +47,7 @@ class ToPyramidLLN(Chain):
             MultiscaleLLN(shape0=shape0),
             BatchNorm())
 
-class ReConvMaxMS(Chain):
+class ReConvMax(Chain):
     def __init__(self, shape0, n_scales, n_chan):
         super().__init__(
             MultiscaleConvMax(
@@ -77,16 +55,12 @@ class ReConvMaxMS(Chain):
                 n_chan=n_chan, supp=3, k_l2=k_l2, σ_w=1e-2),
             BatchNorm(), Rect())
 
-class LogRegMS(Chain):
+class LogReg(Chain):
     def __init__(self, shape0):
         super().__init__(
             SelectPyramidTop(shape0=shape0),
             LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=1e-2),
             Softmax(), CrossEntropyError())
-
-################################################################################
-# Define a router generator.
-################################################################################
 
 def router_gen(ℓ):
     return Chain(
@@ -95,16 +69,10 @@ def router_gen(ℓ):
         LinTrans(n_chan=len(ℓ.sinks), k_l2=k_l2))
 
 ################################################################################
-# Define an optimizer.
+# Allocate a log for the experiment results.
 ################################################################################
 
-t_train = tf.placeholder(tf.float32, ())
-λ_learn = 0.1 / 2**(t_train // 10)
-optimizer = tf.train.MomentumOptimizer(λ_learn, 0.9)
-
-route_stat = t_train < 1
-ϵ = 0.1
-τ = 1
+log = {'sr': [], 'dr': []}
 
 ################################################################################
 # Train a statically-routed network.
@@ -115,16 +83,16 @@ print('\n —— Training a statically-routed network... ——\n')
 net = SRNet(
     x0_shape, y_shape, optimizer,
     [ToPyramidLLN((32, 32), 4),
-        [ReConvMaxMS((32, 32), 4, 32),
-        [ReConvMaxMS((32, 32), 4, 32),
-        [ReConvMaxMS((32, 32), 4, 32),
-            [ReConvMaxMS((32, 32), 3, 64),
-            [ReConvMaxMS((16, 16), 3, 64),
-            [ReConvMaxMS((16, 16), 3, 64),
-                [ReConvMaxMS((16, 16), 2, 128),
-                [ReConvMaxMS((8, 8), 2, 128),
-                [ReConvMaxMS((8, 8), 2, 128),
-                    LogRegMS((8, 8))]]]]]]]]]])
+        [ReConvMax((32, 32), 4, 32),
+        [ReConvMax((32, 32), 4, 32),
+        [ReConvMax((32, 32), 4, 32),
+            [ReConvMax((32, 32), 3, 64),
+            [ReConvMax((16, 16), 3, 64),
+            [ReConvMax((16, 16), 3, 64),
+                [ReConvMax((16, 16), 2, 128),
+                [ReConvMax((8, 8), 2, 128),
+                [ReConvMax((8, 8), 2, 128),
+                    LogReg((8, 8))]]]]]]]]]])
 
 log['sr'] = train(
     net, dataset, logging_period=1,
@@ -140,16 +108,16 @@ print('\n —— Training a dynamically-routed network... ——\n')
 net = DSNet(
     x0_shape, y_shape, router_gen, optimizer,
     dict(k_cpt=k_cpt, k_l2=k_l2, ϵ=ϵ, τ=τ, route_stat=route_stat),
-    [ToPyramidLLN((32, 32), 4), LogRegMS((32, 32)),
-        [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
-        [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
-        [ReConvMaxMS((32, 32), 4, 32), LogRegMS((32, 32)),
-            [ReConvMaxMS((32, 32), 3, 64), LogRegMS((16, 16)),
-            [ReConvMaxMS((16, 16), 3, 64), LogRegMS((16, 16)),
-            [ReConvMaxMS((16, 16), 3, 64), LogRegMS((16, 16)),
-                [ReConvMaxMS((16, 16), 2, 128), LogRegMS((8, 8)),
-                [ReConvMaxMS((8, 8), 2, 128), LogRegMS((8, 8)),
-                [ReConvMaxMS((8, 8), 2, 128), LogRegMS((8, 8))]]]]]]]]]])
+    [ToPyramidLLN((32, 32), 4), LogReg((32, 32)),
+        [ReConvMax((32, 32), 4, 32), LogReg((32, 32)),
+        [ReConvMax((32, 32), 4, 32), LogReg((32, 32)),
+        [ReConvMax((32, 32), 4, 32), LogReg((32, 32)),
+            [ReConvMax((32, 32), 3, 64), LogReg((16, 16)),
+            [ReConvMax((16, 16), 3, 64), LogReg((16, 16)),
+            [ReConvMax((16, 16), 3, 64), LogReg((16, 16)),
+                [ReConvMax((16, 16), 2, 128), LogReg((8, 8)),
+                [ReConvMax((8, 8), 2, 128), LogReg((8, 8)),
+                [ReConvMax((8, 8), 2, 128), LogReg((8, 8))]]]]]]]]]])
 
 log['dr'] = train(
     net, dataset, logging_period=1,
