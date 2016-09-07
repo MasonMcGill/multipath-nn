@@ -35,6 +35,6 @@ def train(net, dataset, hypers=(lambda t: {}), batch_size=64,
             (net.train if mode == 'tr' else net.validate)(x0, y, ϕ)
         if (t + 1) % logging_period == 0:
             print(render_net_desc(
-                net_desc(net, dataset, net_state, layer_states),
+                net_desc(net, dataset, ϕ, net_state, layer_states),
                 '%s — Epoch %i' % (name, t + 1)))
     return net_desc(net, dataset, net_state, layer_states)

@@ -107,12 +107,17 @@ def route_sinks_ds_stat(ℓ, opts):
 def route_sinks_ds_dyn(ℓ, opts):
     ℓ.router = opts.router_gen(ℓ)
     ℓ.router.link(ℓ.x, None, opts.mode)
-    π_tr = (
-        opts.ϵ / len(ℓ.sinks)
-        + (1 - opts.ϵ) * tf.nn.softmax(opts.τ * ℓ.router.x))
-    π_ev = tf.to_float(tf.equal(
-        tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
-        tf.range(len(ℓ.sinks))))
+    π_stat = (
+        (opts.ϵ / len(ℓ.sinks)
+         + (1 - opts.ϵ) * (1 - np.eye(len(ℓ.sinks))[0]) / (len(ℓ.sinks) - 1))
+        * tf.ones_like(ℓ.router.x))
+    π_tr = tf.cond(opts.route_stat, lambda: π_stat, lambda: (
+        (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ)
+        + opts.ϵ / len(ℓ.sinks)))
+    π_ev = tf.cond(opts.route_stat, lambda: π_stat, lambda: (
+        tf.to_float(tf.equal(
+            tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
+            tf.range(len(ℓ.sinks))))))
     for i, s in enumerate(ℓ.sinks):
         route_ds(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
 
@@ -142,7 +147,9 @@ def route_ds(ℓ, p_tr, p_ev, opts):
     else: route_sinks_ds_dyn(ℓ, opts)
 
 class DSNet(Net):
-    default_hypers = dict(k_cpt=0.0, ϵ=0.1, λ=0.9, τ=0.1)
+    default_hypers = dict(
+        k_cpt=0.0, ϵ=0.1, λ=0.9, τ=10,
+        route_stat=tf.constant(False))
 
     def __init__(self, x0_shape, y_shape, router_gen, optimizer, hypers, root):
         super().__init__(x0_shape, y_shape, hypers, root)
@@ -197,9 +204,14 @@ def route_sinks_cr_stat(ℓ, opts):
 def route_sinks_cr_dyn(ℓ, opts):
     ℓ.router = opts.router_gen(ℓ)
     ℓ.router.link(ℓ.x, None, opts.mode)
-    π_ev = tf.to_float(tf.equal(
-        tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
-        tf.range(len(ℓ.sinks))))
+    π_stat = (
+        (opts.ϵ / len(ℓ.sinks)
+         + (1 - opts.ϵ) * (1 - np.eye(len(ℓ.sinks))[0]) / (len(ℓ.sinks) - 1))
+        * tf.ones_like(ℓ.router.x))
+    π_ev = tf.cond(opts.route_stat, lambda: π_stat, lambda: (
+        tf.to_float(tf.equal(
+            tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
+            tf.range(len(ℓ.sinks))))))
     π_tr = opts.ϵ / len(ℓ.sinks) + (1 - opts.ϵ) * π_ev
     for i, s in enumerate(ℓ.sinks):
         route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
@@ -248,7 +260,7 @@ def route_cr(ℓ, p_tr, p_ev, opts):
 
 class CRNet(Net):
     default_hypers = dict(k_cpt=0.0, k_cre=1e-3, ϵ=0.1, λ=0.99,
-                          optimistic=True)
+                          optimistic=True, route_stat=tf.constant(False))
 
     def __init__(self, x0_shape, y_shape, router_gen, optimizer, hypers, root):
         super().__init__(x0_shape, y_shape, hypers, root)
