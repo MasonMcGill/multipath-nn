@@ -84,7 +84,8 @@ class SRNet(Net):
         self._sess.run(tf.initialize_all_variables())
 
     def __del__(self):
-        self._sess.close()
+        if hasattr(self, '_sess'):
+            self._sess.close()
 
     def train(self, x0, y, hypers={}):
         self._sess.run(self._train_op, {
@@ -172,7 +173,8 @@ class DSNet(Net):
         self._sess.run(tf.initialize_all_variables())
 
     def __del__(self):
-        self._sess.close()
+        if hasattr(self, '_sess'):
+            self._sess.close()
 
     def train(self, x0, y, hypers={}):
         self._sess.run(self._train_op, {
@@ -282,7 +284,8 @@ class CRNet(Net):
         self._sess.run(tf.initialize_all_variables())
 
     def __del__(self):
-        self._sess.close()
+        if hasattr(self, '_sess'):
+            self._sess.close()
 
     def train(self, x0, y, hypers={}):
         self._sess.run(self._train_op, {
