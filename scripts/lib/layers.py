@@ -27,22 +27,23 @@ class Layer(metaclass=ABCMeta):
 ################################################################################
 
 class LinTrans(Layer):
-    default_hypers = dict(n_chan=1, k_l2=0, σ_w=1)
+    default_hypers = dict(n_chan=1, k_l2=0, σ_w=1, res=False)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
         ϕ, θ = self.hypers, self.params
         n_in = np.prod(x.get_shape().as_list()[1:])
+        w_eq = np.eye(n_in, ϕ.n_chan) if ϕ.res else 0
         w_shape = (n_in, ϕ.n_chan)
         w_scale = ϕ.σ_w / np.sqrt(n_in)
-        θ.w = tf.Variable(w_scale * tf.random_normal(w_shape))
+        θ.w = tf.Variable(w_eq + w_scale * tf.random_normal(w_shape))
         θ.b = tf.Variable(tf.zeros(ϕ.n_chan))
         self.x = tf.matmul(tf.reshape(x, (-1, n_in)), θ.w) + θ.b
-        self.c_mod = ϕ.k_l2 * tf.reduce_sum(tf.square(θ.w))
+        self.c_mod = ϕ.k_l2 * tf.reduce_sum(tf.square(θ.w - w_eq))
         self.n_ops = n_in * ϕ.n_chan
 
 class Conv(Layer):
-    default_hypers = dict(n_chan=1, supp=1, k_l2=0, σ_w=1)
+    default_hypers = dict(n_chan=1, supp=1, k_l2=0, σ_w=1, res=False)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -51,10 +52,15 @@ class Conv(Layer):
         n_pix = np.prod(x.get_shape().as_list()[1:3])
         w_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
         w_scale = ϕ.σ_w / ϕ.supp / np.sqrt(n_in)
-        θ.w = tf.Variable(w_scale * tf.random_normal(w_shape))
+        w_ident = np.float32(
+            (np.arange(ϕ.supp) == ϕ.supp // 2)[:, None, None, None]
+            * (np.arange(ϕ.supp) == ϕ.supp // 2)[:, None, None]
+            * np.eye(n_in, ϕ.n_chan))
+        w_eq = w_ident if ϕ.res else 0
+        θ.w = tf.Variable(w_eq + w_scale * tf.random_normal(w_shape))
         θ.b = tf.Variable(tf.zeros(ϕ.n_chan))
         self.x = tf.nn.conv2d(x, θ.w, (1, 1, 1, 1), 'SAME') + θ.b
-        self.c_mod = ϕ.k_l2 * tf.reduce_sum(tf.square(θ.w))
+        self.c_mod = ϕ.k_l2 * tf.reduce_sum(tf.square(θ.w - w_eq))
         self.n_ops = n_pix * ϕ.supp**2 * n_in * ϕ.n_chan
 
 class Rect(Layer):
@@ -143,7 +149,7 @@ class MultiscaleLLN(Layer):
 class MultiscaleConvMax(Layer):
     default_hypers = dict(
         shape0=(1, 1), n_scales=1, n_chan=1,
-        supp=1, k_l2=0, σ_w=1)
+        supp=1, res=False, k_l2=0, σ_w=1)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -152,7 +158,12 @@ class MultiscaleConvMax(Layer):
         n_pix = x.get_shape()[1].value
         w_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
         w_scale = ϕ.σ_w / ϕ.supp / np.sqrt(n_in)
-        θ.w_horz = tf.Variable(w_scale * tf.random_normal(w_shape))
+        w_ident = np.float32(
+            (np.arange(ϕ.supp) == ϕ.supp // 2)[:, None, None, None]
+            * (np.arange(ϕ.supp) == ϕ.supp // 2)[:, None, None]
+            * np.eye(n_in, ϕ.n_chan))
+        w_eq = w_ident if ϕ.res else 0
+        θ.w_horz = tf.Variable(w_eq + w_scale * tf.random_normal(w_shape))
         θ.w_vert = tf.Variable(w_scale * tf.random_normal(w_shape))
         θ.b = tf.Variable(tf.zeros(ϕ.n_chan))
         s_in = unpack_pyramid(x, ϕ.shape0)
@@ -166,7 +177,7 @@ class MultiscaleConvMax(Layer):
               for i in range(1, len(s_in)))][-ϕ.n_scales:]
         self.x = pack_pyramid(s_out)
         self.c_mod = ϕ.k_l2 * (
-            tf.reduce_sum(tf.square(θ.w_horz)) +
+            tf.reduce_sum(tf.square(θ.w_horz - w_eq)) +
             tf.reduce_sum(tf.square(θ.w_vert)))
         self.n_ops = n_pix * ϕ.supp**2 * n_in * ϕ.n_chan
 
