@@ -6,6 +6,7 @@ networks.
 from json import dumps
 from os import makedirs
 
+import numpy as np
 import tensorflow as tf
 
 from lib.data import Dataset
@@ -16,10 +17,16 @@ from lib.nets import CRNet, DSNet, SRNet
 from lib.training import train
 
 ################################################################################
-# Load data.
+# Load and preprocess data.
 ################################################################################
 
+m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
+w_cls = np.transpose([np.equal(m_cls, i) for i in range(2)])
+
 dataset = Dataset('data/cifar-10.mat')
+dataset.y_tr = np.dot(dataset.y_tr, w_cls)
+dataset.y_ts = np.dot(dataset.y_ts, w_cls)
+
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
 
@@ -28,7 +35,7 @@ y_shape = dataset.y_shape
 ################################################################################
 
 t_train = tf.placeholder(tf.float32, ())
-λ_learn = 0.1 / 2**(t_train // 10)
+λ_learn = 0.1 / 2**(t_train // 2)
 optimizer = tf.train.MomentumOptimizer(λ_learn, 0.9)
 route_stat = t_train < 1
 k_cpt = 1e-9
