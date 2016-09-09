@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+'''
+Train dynamically-routed networks
+'''
+from json import dumps
+from os import makedirs
+
+import numpy as np
+import tensorflow as tf
+
+from lib.data import Dataset
+from lib.layers import (
+    BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
+    SelectPyramidTop, Softmax, SquaredError, ToPyramid)
+from lib.nets import CRNet, DSNet
+from lib.training import train
+
+################################################################################
+# Load and preprocess data.
+################################################################################
+
+m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
+w_cls = np.transpose([np.equal(m_cls, i) for i in range(2)])
+
+dataset = Dataset('data/cifar-10.mat')
+dataset.y_tr = np.dot(dataset.y_tr, w_cls)
+dataset.y_ts = np.dot(dataset.y_ts, w_cls)
+
+x0_shape = dataset.x0_shape
+y_shape = dataset.y_shape
+
+################################################################################
+# Define network hyperparameters.
+################################################################################
+
+t_train = tf.placeholder(tf.float32, ())
+n_epochs = 10
+
+optimizer = tf.train.MomentumOptimizer(
+    0.1 / 2**(t_train // 2), 0.9)
+
+k_cpts = [0, *[1e-10 * 2**i for i in range(11)]]
+k_l2 = 1e-4
+
+################################################################################
+# Define network components.
+################################################################################
+
+class ToPyramidLLN(Chain):
+    def __init__(self, shape0, n_scales):
+        super().__init__(
+            ToPyramid(n_scales=n_scales),
+            MultiscaleLLN(shape0=shape0),
+            BatchNorm())
+
+class ReConvMax(Chain):
+    def __init__(self, shape0, n_scales, n_chan):
+        super().__init__(
+            MultiscaleConvMax(
+                shape0=shape0, n_scales=n_scales, n_chan=n_chan,
+                supp=3, res=True, k_l2=k_l2, σ_w=1e-2),
+            BatchNorm(), Rect())
+
+class LogReg(Chain):
+    def __init__(self, shape0):
+        super().__init__(
+            SelectPyramidTop(shape0=shape0),
+            LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=1e-2),
+            Softmax(), SquaredError())
+
+def router_gen(ℓ):
+    return Chain(
+        SelectPyramidTop(shape0=(4, 4)),
+        LinTrans(n_chan=16, k_l2=k_l2), BatchNorm(), Rect(),
+        LinTrans(n_chan=len(ℓ.sinks), k_l2=k_l2))
+
+################################################################################
+# Allocate a log for the experiment results.
+################################################################################
+
+log = {'ds': [], 'cr': []}
+
+################################################################################
+# Train networks
+################################################################################
+
+for NetType in [DSNet, CRNet]:
+    for k_cpt in k_cpts:
+        net = NetType(
+            x0_shape, y_shape, router_gen, optimizer, {'k_cpt': k_cpt},
+            [ToPyramidLLN((32, 32), 4), LogReg((32, 32)),
+                [ReConvMax((32, 32), 4, 32), LogReg((32, 32)),
+                [ReConvMax((32, 32), 4, 32), LogReg((32, 32)),
+                [ReConvMax((32, 32), 4, 32), LogReg((32, 32)),
+                    [ReConvMax((32, 32), 3, 64), LogReg((16, 16)),
+                    [ReConvMax((16, 16), 3, 64), LogReg((16, 16)),
+                    [ReConvMax((16, 16), 3, 64), LogReg((16, 16)),
+                        [ReConvMax((16, 16), 2, 128), LogReg((8, 8)),
+                        [ReConvMax((8, 8), 2, 128), LogReg((8, 8)),
+                        [ReConvMax((8, 8), 2, 128), LogReg((8, 8))]]]]]]]]]])
+        desc = train(
+            net, dataset, n_epochs=n_epochs,
+            name=('%s (k_cpt=%e)' % (NetType.__name__, k_cpt)),
+            hypers=(lambda t: {t_train: t}))
+        log['ds' if NetType is DSNet else 'cr'].append(desc['stats_ts'])
+
+################################################################################
+# Save the results.
+################################################################################
+
+makedirs('nets/', exist_ok=True)
+with open('nets/dr-chain.json', 'w') as f:
+    f.write(dumps(log, sort_keys=True, indent=2, separators=(',', ': ')))
+
+print('\n —— Saved the results as `nets/dr-chain.json`. ——\n')

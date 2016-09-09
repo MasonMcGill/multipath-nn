@@ -24,6 +24,7 @@ def train(net, dataset, hypers=(lambda t: {}), batch_size=64,
           n_epochs=100, logging_period=5, name='Network'):
     net_state = {
         (net, 'acc'): sum(p_cor(net, ℓ) for ℓ in net.leaves),
+        (net, 'moc'): sum(ℓ.p_ev * ℓ.n_ops for ℓ in net.layers),
         **{(ℓ, 'p_cor'): p_cor(net, ℓ) for ℓ in net.leaves},
         **{(ℓ, 'p_inc'): p_inc(net, ℓ) for ℓ in net.leaves}}
     for t in range(n_epochs):
@@ -38,4 +39,4 @@ def train(net, dataset, hypers=(lambda t: {}), batch_size=64,
             print(render_net_desc(
                 net_desc(net, dataset, ϕ, net_state),
                 '%s — Epoch %i' % (name, t + 1)))
-    return net_desc(net, dataset, net_state)
+    return net_desc(net, dataset, hypers(n_epochs), net_state)
