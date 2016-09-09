@@ -30,6 +30,9 @@ class Dataset:
             self.y_vl = np.take(self.y_tr, order[:n_vl], axis=0)
             self.x0_tr = np.take(self.x0_tr, order[n_vl:], axis=0)
             self.y_tr = np.take(self.y_tr, order[n_vl:], axis=0)
+        else:
+            self.x0_vl = self.x0_tr[:0]
+            self.y_vl = self.y_tr[:0]
 
     @property
     def x0_shape(self):
@@ -43,8 +46,7 @@ class Dataset:
         yield from batches(self.x0_tr, self.y_tr, n)
 
     def validation_batches(self, n=512):
-        if hasattr(self, 'x0_vl'):
-            yield from batches(self.x0_vl, self.y_vl, n)
+        yield from batches(self.x0_vl, self.y_vl, n)
 
     def test_batches(self, n=512):
         yield from batches(self.x0_ts, self.y_ts, n)

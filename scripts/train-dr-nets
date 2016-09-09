@@ -22,9 +22,10 @@ from lib.training import train
 m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
 w_cls = np.transpose([np.equal(m_cls, i) for i in range(2)])
 
-dataset = Dataset('data/cifar-10.mat')
+dataset = Dataset('data/cifar-10.mat', n_vl=1280)
 dataset.y_tr = np.dot(dataset.y_tr, w_cls)
 dataset.y_ts = np.dot(dataset.y_ts, w_cls)
+dataset.y_vl = np.dot(dataset.y_vl, w_cls)
 
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
@@ -39,6 +40,8 @@ n_epochs = 10
 optimizer = tf.train.MomentumOptimizer(
     0.1 / 2**(t_train // 2), 0.9)
 
+validate = True
+route_stat = t_train < 3
 k_cpts = [0, *[1e-10 * 2**i for i in range(11)]]
 k_l2 = 1e-4
 
@@ -87,7 +90,8 @@ log = {'ds': [], 'cr': []}
 for NetType in [DSNet, CRNet]:
     for k_cpt in k_cpts:
         net = NetType(
-            x0_shape, y_shape, router_gen, optimizer, {'k_cpt': k_cpt},
+            x0_shape, y_shape, router_gen, optimizer,
+            dict(route_stat=route_stat, k_cpt=k_cpt, validate=validate),
             [ToPyramidLLN((32, 32), 4), LogReg((32, 32)),
                 [ReConvMax((32, 32), 4, 32), LogReg((32, 32)),
                 [ReConvMax((32, 32), 4, 32), LogReg((32, 32)),
@@ -109,7 +113,7 @@ for NetType in [DSNet, CRNet]:
 ################################################################################
 
 makedirs('nets/', exist_ok=True)
-with open('nets/dr-chain.json', 'w') as f:
+with open('nets/dr-chains.json', 'w') as f:
     f.write(dumps(log, sort_keys=True, indent=2, separators=(',', ': ')))
 
 print('\n —— Saved the results as `nets/dr-chain.json`. ——\n')
