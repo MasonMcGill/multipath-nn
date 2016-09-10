@@ -22,8 +22,46 @@ def minimize_expected(net, cost, optimizer):
     return optimizer.apply_gradients(scaled_grads)
 
 ################################################################################
+# Error Mapping
+################################################################################
+
+def add_error_mapping(ℓ, λ):
+    ℓ.μ_tr = tf.Variable(0.0, trainable=False)
+    ℓ.μ_vl = tf.Variable(0.0, trainable=False)
+    ℓ.v_tr = tf.Variable(1.0, trainable=False)
+    ℓ.v_vl = tf.Variable(1.0, trainable=False)
+    μ_batch = (
+        tf.reduce_sum(ℓ.p_tr * ℓ.c_err)
+        / tf.reduce_sum(ℓ.p_tr))
+    v_batch = (
+        tf.reduce_sum(ℓ.p_tr * tf.square(ℓ.c_err - μ_batch))
+        / tf.reduce_sum(ℓ.p_tr))
+    ℓ.update_μv_tr = tf.group(
+        tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch),
+        tf.assign(ℓ.v_tr, λ * ℓ.v_tr + (1 - λ) * v_batch))
+    ℓ.update_μv_vl = tf.group(
+        tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch),
+        tf.assign(ℓ.v_vl, λ * ℓ.v_vl + (1 - λ) * v_batch))
+    ℓ.c_err_cor = (
+        tf.sqrt((ℓ.v_vl + 1e-3) / (ℓ.v_tr + 1e-3))
+        * (ℓ.c_err - ℓ.μ_tr) + ℓ.μ_vl)
+
+################################################################################
 # Root Network Class
 ################################################################################
+
+def head(layer_tree):
+    return layer_tree if isinstance(layer_tree, Layer) else layer_tree[0]
+
+def tail(layer_tree):
+    return [] if isinstance(layer_tree, Layer) else layer_tree[1:]
+
+def link(layer_tree, x, y, mode):
+    source, sinks = head(layer_tree), tail(layer_tree)
+    source.link(x, y, mode)
+    source.sinks = list(map(head, sinks))
+    for s in sinks:
+        link(s, source.x, y, mode)
 
 class Net(metaclass=ABCMeta):
     default_hypers = {}
@@ -34,19 +72,15 @@ class Net(metaclass=ABCMeta):
         self.x0 = tf.placeholder(tf.float32, (None,) + x0_shape)
         self.y = tf.placeholder(tf.float32, (None,) + y_shape)
         self.mode = tf.placeholder_with_default('ev', ())
-        self.sinks = {}
-        def head(tree):
-            return tree if isinstance(tree, Layer) else tree[0]
-        def tail(tree):
-            return [] if isinstance(tree, Layer) else tree[1:]
-        def link(tree, x):
-            source, sinks = head(tree), tail(tree)
-            source.link(x, self.y, self.mode)
-            source.sinks = list(map(head, sinks))
-            for s in sinks:
-                link(s, source.x)
         self.root = head(layers)
-        link(layers, self.x0)
+        link(layers, self.x0, self.y, self.mode)
+        self.train_op = tf.no_op()
+        self.validate_op = tf.no_op()
+        self.sess = tf.Session()
+
+    def __del__(self):
+        if hasattr(self, 'sess'):
+            self.sess.close()
 
     @property
     def layers(self):
@@ -61,13 +95,16 @@ class Net(metaclass=ABCMeta):
         return (ℓ for ℓ in self.layers if len(ℓ.sinks) == 0)
 
     def train(self, x0, y, hypers={}):
-        pass
+        self.sess.run(self.train_op, {
+            self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
 
     def validate(self, x0, y, hypers={}):
-        pass
+        self.sess.run(self.validate_op, {
+            self.x0: x0, self.y: y, **hypers})
 
     def eval(self, target, x0, y, hypers={}):
-        pass
+        return self.sess.run(target, {
+            self.x0: x0, self.y: y, **hypers})
 
 ################################################################################
 # Statically-Routed Networks
@@ -79,21 +116,8 @@ class SRNet(Net):
         for ℓ in self.layers:
             ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
         c_tr = sum(ℓ.c_err + ℓ.c_mod for ℓ in self.layers)
-        self._train_op = optimizer.minimize(tf.reduce_mean(c_tr))
-        self._sess = tf.Session()
-        self._sess.run(tf.initialize_all_variables())
-
-    def __del__(self):
-        if hasattr(self, '_sess'):
-            self._sess.close()
-
-    def train(self, x0, y, hypers={}):
-        self._sess.run(self._train_op, {
-            self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
-
-    def eval(self, target, x0, y, hypers={}):
-        return self._sess.run(target, {
-            self.x0: x0, self.y: y, **hypers})
+        self.train_op = optimizer.minimize(tf.reduce_mean(c_tr))
+        self.sess.run(tf.initialize_all_variables())
 
 ################################################################################
 # Decision Smoothing Networks
@@ -125,25 +149,7 @@ def route_sinks_ds_dyn(ℓ, opts):
 def route_ds(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    ℓ.μ_tr = tf.Variable(0.0, trainable=False)
-    ℓ.μ_vl = tf.Variable(0.0, trainable=False)
-    ℓ.v_tr = tf.Variable(1.0, trainable=False)
-    ℓ.v_vl = tf.Variable(1.0, trainable=False)
-    μ_batch = (
-        tf.reduce_sum(ℓ.p_tr * ℓ.c_err)
-        / tf.reduce_sum(ℓ.p_tr))
-    v_batch = (
-        tf.reduce_sum(ℓ.p_tr * tf.square(ℓ.c_err - μ_batch))
-        / tf.reduce_sum(ℓ.p_tr))
-    ℓ.update_μv_tr = tf.group(
-        tf.assign(ℓ.μ_tr, opts.λ * ℓ.μ_tr + (1 - opts.λ) * μ_batch),
-        tf.assign(ℓ.v_tr, opts.λ * ℓ.v_tr + (1 - opts.λ) * v_batch))
-    ℓ.update_μv_vl = tf.group(
-        tf.assign(ℓ.μ_vl, opts.λ * ℓ.μ_vl + (1 - opts.λ) * μ_batch),
-        tf.assign(ℓ.v_vl, opts.λ * ℓ.v_vl + (1 - opts.λ) * v_batch))
-    ℓ.c_err_cor = (
-        tf.sqrt((ℓ.v_vl + 1e-3) / (ℓ.v_tr + 1e-3))
-        * (ℓ.c_err - ℓ.μ_tr) + ℓ.μ_vl)
+    add_error_mapping(ℓ, opts.λ)
     if len(ℓ.sinks) < 2: route_sinks_ds_stat(ℓ, opts)
     else: route_sinks_ds_dyn(ℓ, opts)
 
@@ -166,27 +172,10 @@ class DSNet(Net):
                     for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_mod
         with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
-            self._train_op = minimize_expected(
+            self.train_op = minimize_expected(
                 self, tf.reduce_mean(c_tr), optimizer)
-        self._validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
-        self._sess = tf.Session()
-        self._sess.run(tf.initialize_all_variables())
-
-    def __del__(self):
-        if hasattr(self, '_sess'):
-            self._sess.close()
-
-    def train(self, x0, y, hypers={}):
-        self._sess.run(self._train_op, {
-            self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
-
-    def validate(self, x0, y, hypers={}):
-        self._sess.run(self._validate_op, {
-            self.x0: x0, self.y: y, **hypers})
-
-    def eval(self, target, x0, y, hypers={}):
-        return self._sess.run(target, {
-            self.x0: x0, self.y: y, **hypers})
+        self.validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
+        self.sess.run(tf.initialize_all_variables())
 
 ################################################################################
 # Cost Regression Networks
@@ -236,25 +225,7 @@ def route_sinks_cr_dyn(ℓ, opts):
 def route_cr(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    ℓ.μ_tr = tf.Variable(0.0, trainable=False)
-    ℓ.μ_vl = tf.Variable(0.0, trainable=False)
-    ℓ.v_tr = tf.Variable(1.0, trainable=False)
-    ℓ.v_vl = tf.Variable(1.0, trainable=False)
-    μ_batch = (
-        tf.reduce_sum(ℓ.p_tr * ℓ.c_err)
-        / tf.reduce_sum(ℓ.p_tr))
-    v_batch = (
-        tf.reduce_sum(ℓ.p_tr * tf.square(ℓ.c_err - μ_batch))
-        / tf.reduce_sum(ℓ.p_tr))
-    ℓ.update_μv_tr = tf.group(
-        tf.assign(ℓ.μ_tr, opts.λ * ℓ.μ_tr + (1 - opts.λ) * μ_batch),
-        tf.assign(ℓ.v_tr, opts.λ * ℓ.v_tr + (1 - opts.λ) * v_batch))
-    ℓ.update_μv_vl = tf.group(
-        tf.assign(ℓ.μ_vl, opts.λ * ℓ.μ_vl + (1 - opts.λ) * μ_batch),
-        tf.assign(ℓ.v_vl, opts.λ * ℓ.v_vl + (1 - opts.λ) * v_batch))
-    ℓ.c_err_cor = (
-        tf.sqrt((ℓ.v_vl + 1e-3) / (ℓ.v_tr + 1e-3))
-        * (ℓ.c_err - ℓ.μ_tr) + ℓ.μ_vl)
+    add_error_mapping(ℓ, opts.λ)
     if len(ℓ.sinks) < 2: route_sinks_cr_stat(ℓ, opts)
     else: route_sinks_cr_dyn(ℓ, opts)
 
@@ -277,24 +248,7 @@ class CRNet(Net):
         c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_cre + c_mod
         with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
-            self._train_op = minimize_expected(
+            self.train_op = minimize_expected(
                 self, tf.reduce_mean(c_tr), optimizer)
-        self._validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
-        self._sess = tf.Session()
-        self._sess.run(tf.initialize_all_variables())
-
-    def __del__(self):
-        if hasattr(self, '_sess'):
-            self._sess.close()
-
-    def train(self, x0, y, hypers={}):
-        self._sess.run(self._train_op, {
-            self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
-
-    def validate(self, x0, y, hypers={}):
-        self._sess.run(self._validate_op, {
-            self.x0: x0, self.y: y, **hypers})
-
-    def eval(self, target, x0, y, hypers={}):
-        return self._sess.run(target, {
-            self.x0: x0, self.y: y, **hypers})
+        self.validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
+        self.sess.run(tf.initialize_all_variables())
