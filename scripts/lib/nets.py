@@ -94,6 +94,25 @@ class Net(metaclass=ABCMeta):
     def leaves(self):
         return (ℓ for ℓ in self.layers if len(ℓ.sinks) == 0)
 
+    @property
+    def params(self):
+        result = Namespace()
+        for i, ℓ in enumerate(self.layers):
+            for k, v in vars(ℓ.params).items():
+                setattr(result, 'layer%i_%s' % (i, k), v)
+            if hasattr(ℓ, 'router'):
+                for k, v in vars(ℓ.router.params).items():
+                    setattr(result, 'router%i_%s' % (i, k), v)
+        return result
+
+    def write(self, path):
+        saver = tf.train.Saver(list(vars(self.params).values()))
+        saver.save(self.sess, path, write_meta_graph=False)
+
+    def read(self, path):
+        saver = tf.train.Saver(list(vars(self.params).values()))
+        saver.restore(self.sess, path)
+
     def train(self, x0, y, hypers={}):
         self.sess.run(self.train_op, {
             self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
