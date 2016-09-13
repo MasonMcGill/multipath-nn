@@ -3,13 +3,13 @@
 Train dynamically-routed networks
 '''
 from os import makedirs
+from os.path import isfile
 
 import numpy as np
 import tensorflow as tf
 
 from lib.data import Dataset
-from lib.nets import dr_chain
-from lib.net_types import CRNet, DSNet
+from lib.nets import ds_chain
 from lib.training import train
 
 ################################################################################
@@ -32,24 +32,39 @@ y_shape = dataset.y_shape
 ################################################################################
 
 t_train = tf.placeholder(tf.float32, ())
-n_epochs = 50
+n_sr_epochs = 20
+n_dr_epochs = 10
 
 optimizer = tf.train.MomentumOptimizer(
     0.1 / 10**(t_train // 10), 0.9)
 
-route_stat = t_train < 5
 k_cpts = [0, *[1e-10 * 2**i for i in range(11)]]
-k_l2 = 1e-4
 
 ################################################################################
-# Train networks
+# Ensure that the output directory exists.
 ################################################################################
 
-for typ in [DSNet, CRNet]:
-    for k_cpt in k_cpts:
-        net = dr_chain(typ, route_stat, k_cpt, optimizer)
-        train(net, dataset, n_epochs=n_epochs,
-              name=('%s (k_cpt=%e)' % (typ.__name__, k_cpt)),
-              hypers=(lambda t: {t_train: t}))
-        makedirs('nets/dr-chains', exist_ok=True)
-        net.write('nets/dr-chains/k_cpt=%e.tfn' % k_cpt)
+makedirs('nets/ds-chains', exist_ok=True)
+
+################################################################################
+# Train a statically-routed network.
+################################################################################
+
+if not isfile('nets/ds-chains/sr.tfn'):
+    net = ds_chain(tf.constant(True), 0, optimizer)
+    train(net, dataset, n_epochs=n_sr_epochs,
+          name='DSNet (routing="stat")',
+          hypers=(lambda t: {t_train: t}))
+    net.write('nets/ds-chains/sr.tfn')
+
+################################################################################
+# Train dynamically-routed networks, initializing with the SR net's parameters.
+################################################################################
+
+for i, k_cpt in enumerate(k_cpts):
+    net = ds_chain(tf.constant(False), k_cpt, optimizer)
+    net.read('nets/ds-chains/sr.tfn')
+    train(net, dataset, n_epochs=n_dr_epochs,
+          name=('DSNet (routing="dyn", k_cpt=%e)' % k_cpt),
+          hypers=(lambda t: {t_train: t + n_sr_epochs}))
+    net.write('nets/ds-chains/dr%i.tfn' % i)

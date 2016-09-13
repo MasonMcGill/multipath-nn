@@ -3,7 +3,7 @@ from collections import namedtuple
 from lib.layer_types import (
     BatchNorm, Chain, CrossEntropyError, LinTrans, MultiscaleConvMax,
     MultiscaleLLN, Rect, SelectPyramidTop, Softmax, ToPyramid)
-from lib.net_types import SRNet
+from lib.net_types import DSNet, SRNet
 
 ################################################################################
 # Network Hyperparameters
@@ -17,6 +17,7 @@ router_n_chan = 16
 
 k_l2 = 1e-4
 σ_w = 1e-2
+ϵ_ds = 1e-3
 
 TFSpec = namedtuple(
     'TransformSpec',
@@ -80,10 +81,10 @@ def sr_chain(n_tf, optimizer):
     layers = [ToPyramidLLN(*tf_specs[0][:2]), layers]
     return SRNet(x0_shape, y_shape, optimizer, layers)
 
-def dr_chain(typ, route_stat, k_cpt, optimizer):
+def ds_chain(route_stat, k_cpt, optimizer):
     layers = [ReConvMax(*tf_specs[-1][:3]), LogReg(tf_specs[-1][0])]
     for spec in reversed(tf_specs[:-1]):
         layers = [ReConvMax(*spec[:3]), LogReg(spec[3]), layers]
     layers = [ToPyramidLLN(*tf_specs[0][:2]), LogReg(tf_specs[0][3]), layers]
-    hypers = dict(route_stat=route_stat, k_cpt=k_cpt, validate=True)
-    return typ(x0_shape, y_shape, gen_router, optimizer, hypers, layers)
+    hypers = dict(route_stat=route_stat, k_cpt=k_cpt, validate=True, ϵ=ϵ_ds)
+    return DSNet(x0_shape, y_shape, gen_router, optimizer, hypers, layers)
