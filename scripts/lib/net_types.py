@@ -96,21 +96,17 @@ class Net(metaclass=ABCMeta):
 
     @property
     def params(self):
-        result = Namespace()
-        for i, ℓ in enumerate(self.layers):
-            for k, v in vars(ℓ.params).items():
-                setattr(result, 'layer%i_%s' % (i, k), v)
-            if hasattr(ℓ, 'router'):
-                for k, v in vars(ℓ.router.params).items():
-                    setattr(result, 'router%i_%s' % (i, k), v)
-        return result
+        return Namespace(**{
+            ('layer%i_%s' % (i, k)): v
+            for i, ℓ in enumerate(self.layers)
+            for k, v in vars(ℓ.params).items()})
 
     def write(self, path):
-        saver = tf.train.Saver(list(vars(self.params).values()))
+        saver = tf.train.Saver(vars(self.params))
         saver.save(self.sess, path, write_meta_graph=False)
 
     def read(self, path):
-        saver = tf.train.Saver(list(vars(self.params).values()))
+        saver = tf.train.Saver(vars(self.params))
         saver.restore(self.sess, path)
 
     def train(self, x0, y, hypers={}):
@@ -196,6 +192,18 @@ class DSNet(Net):
         self.validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
         self.sess.run(tf.initialize_all_variables())
 
+    @property
+    def params(self):
+        result = super().params
+        for i, ℓ in enumerate(self.layers):
+            setattr(result, 'μ_tr%i' % i, ℓ.μ_tr)
+            setattr(result, 'μ_vl%i' % i, ℓ.μ_vl)
+            setattr(result, 'v_tr%i' % i, ℓ.v_tr)
+            setattr(result, 'v_vl%i' % i, ℓ.v_vl)
+            for k, v in vars(ℓ.router.params).items():
+                setattr(result, 'router%i_%s' % (i, k), v)
+        return result
+
 ################################################################################
 # Cost Regression Networks
 ################################################################################
@@ -271,3 +279,15 @@ class CRNet(Net):
                 self, tf.reduce_mean(c_tr), optimizer)
         self.validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
         self.sess.run(tf.initialize_all_variables())
+
+    @property
+    def params(self):
+        result = super().params
+        for i, ℓ in enumerate(self.layers):
+            setattr(result, 'μ_tr%i' % i, ℓ.μ_tr)
+            setattr(result, 'μ_vl%i' % i, ℓ.μ_vl)
+            setattr(result, 'v_tr%i' % i, ℓ.v_tr)
+            setattr(result, 'v_vl%i' % i, ℓ.v_vl)
+            for k, v in vars(ℓ.router.params).items():
+                setattr(result, 'router%i_%s' % (i, k), v)
+        return result
