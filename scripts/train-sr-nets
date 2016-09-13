@@ -2,17 +2,13 @@
 '''
 Train statically-routed networks.
 '''
-from json import dumps
 from os import makedirs
 
 import numpy as np
 import tensorflow as tf
 
 from lib.data import Dataset
-from lib.layers import (
-    BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
-    SelectPyramidTop, Softmax, SquaredError, ToPyramid)
-from lib.nets import SRNet
+from lib.nets import sr_chain, tf_specs
 from lib.training import train
 
 ################################################################################
@@ -30,76 +26,23 @@ x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
 
 ################################################################################
-# Define network hyperparameters.
+# Define training hyperparameters.
 ################################################################################
 
 t_train = tf.placeholder(tf.float32, ())
-n_epochs = 10
+n_epochs = 50
 
 optimizer = tf.train.MomentumOptimizer(
-    0.1 / 2**(t_train // 2), 0.9)
-
-k_l2 = 1e-4
+    0.1 / 10**(t_train // 10), 0.9)
 
 ################################################################################
-# Define network components.
+# Train networks.
 ################################################################################
 
-class ToPyramidLLN(Chain):
-    def __init__(self, shape0, n_scales):
-        super().__init__(
-            ToPyramid(n_scales=n_scales),
-            MultiscaleLLN(shape0=shape0),
-            BatchNorm())
-
-class ReConvMax(Chain):
-    def __init__(self, shape0, n_scales, n_chan):
-        super().__init__(
-            MultiscaleConvMax(
-                shape0=shape0, n_scales=n_scales, n_chan=n_chan,
-                supp=3, res=True, k_l2=k_l2, σ_w=1e-2),
-            BatchNorm(), Rect())
-
-class LogReg(Chain):
-    def __init__(self, shape0):
-        super().__init__(
-            SelectPyramidTop(shape0=shape0),
-            LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=1e-2),
-            Softmax(), SquaredError())
-
-################################################################################
-# Allocate a log for the experiment results.
-################################################################################
-
-log = []
-
-################################################################################
-# Train networks
-################################################################################
-
-tf_specs = [
-    ((32, 32), 4, 32), ((32, 32), 4, 32), ((32, 32), 4, 32),
-    ((32, 32), 3, 64), ((16, 16), 3, 64), ((16, 16), 3, 64),
-    ((16, 16), 2, 128), ((8, 8), 2, 128), ((8, 8), 2, 128)]
-
-for n_tf in range(len(tf_specs)):
-    layers = [LogReg((8, 8))]
-    for i in reversed(range(n_tf)):
-        layers = [ReConvMax(*tf_specs[i]), layers]
-    layers = [ToPyramidLLN((32, 32), 4), layers]
-    net = SRNet(x0_shape, y_shape, optimizer, layers)
-    desc = train(
-        net, dataset, n_epochs=n_epochs,
-        name=('SRNet (n_tf=%i)' % n_tf),
-        hypers=(lambda t: {t_train: t}))
-    log.append(desc['stats_ts'])
-
-################################################################################
-# Save the results.
-################################################################################
-
-makedirs('nets/', exist_ok=True)
-with open('nets/sr-chain.json', 'w') as f:
-    f.write(dumps(log, sort_keys=True, indent=2, separators=(',', ': ')))
-
-print('\n —— Saved the results as `nets/sr-chain.json`. ——\n')
+for n_tf in reversed(range(len(tf_specs) + 1)):
+    net = sr_chain(n_tf, optimizer)
+    train(net, dataset, n_epochs=n_epochs,
+          name=('SRNet (n_tf=%i)' % n_tf),
+          hypers=(lambda t: {t_train: t}))
+    makedirs('nets/sr-chains', exist_ok=True)
+    net.write('nets/sr-chains/n_tf=%i.tfn' % n_tf)
