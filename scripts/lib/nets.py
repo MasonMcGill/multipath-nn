@@ -17,7 +17,6 @@ router_n_chan = 16
 
 k_l2 = 1e-4
 σ_w = 1e-2
-ϵ_ds = 1e-3
 
 TFSpec = namedtuple(
     'TransformSpec',
@@ -25,18 +24,18 @@ TFSpec = namedtuple(
     'n_chan shape0_out')
 
 tf_specs = [
-    TFSpec((32, 32), 4, 32, (32, 32)),
-    TFSpec((32, 32), 4, 32, (32, 32)),
-    TFSpec((32, 32), 4, 32, (32, 32)),
-    TFSpec((32, 32), 3, 64, (16, 16)),
-    TFSpec((16, 16), 3, 64, (16, 16)),
-    TFSpec((16, 16), 3, 64, (16, 16)),
-    TFSpec((16, 16), 2, 128, (8, 8)),
-    TFSpec((8, 8), 2, 128, (8, 8)),
-    TFSpec((8, 8), 2, 128, (8, 8)),
-    TFSpec((8, 8), 1, 256, (4, 4)),
-    TFSpec((4, 4), 1, 256, (4, 4)),
-    TFSpec((4, 4), 1, 256, (4, 4))]
+    TFSpec((32, 32), 4, 16, (32, 32)),
+    TFSpec((32, 32), 4, 16, (32, 32)),
+    TFSpec((32, 32), 4, 16, (32, 32)),
+    TFSpec((32, 32), 3, 32, (16, 16)),
+    TFSpec((16, 16), 3, 32, (16, 16)),
+    TFSpec((16, 16), 3, 32, (16, 16)),
+    TFSpec((16, 16), 2, 64, (8, 8)),
+    TFSpec((8, 8), 2, 64, (8, 8)),
+    TFSpec((8, 8), 2, 64, (8, 8)),
+    TFSpec((8, 8), 1, 128, (4, 4)),
+    TFSpec((4, 4), 1, 128, (4, 4)),
+    TFSpec((4, 4), 1, 128, (4, 4))]
 
 ################################################################################
 # Network Components
@@ -67,8 +66,8 @@ class LogReg(Chain):
 def gen_router(ℓ):
     return Chain(
         SelectPyramidTop(shape=tf_specs[-1][-1]),
-        LinTrans(n_chan=router_n_chan, k_l2=k_l2), BatchNorm(), Rect(),
-        LinTrans(n_chan=len(ℓ.sinks), k_l2=k_l2))
+        LinTrans(n_chan=router_n_chan, k_l2=k_l2, σ_w=σ_w),
+        BatchNorm(), Rect(), LinTrans(n_chan=len(ℓ.sinks), k_l2=k_l2))
 
 ################################################################################
 # Network Constructors
@@ -76,15 +75,14 @@ def gen_router(ℓ):
 
 def sr_chain(n_tf, optimizer):
     layers = LogReg(tf_specs[n_tf-1][0])
-    for spec in reversed(tf_specs):
+    for spec in reversed(tf_specs[:n_tf]):
         layers = [ReConvMax(*spec[:3]), layers]
     layers = [ToPyramidLLN(*tf_specs[0][:2]), layers]
     return SRNet(x0_shape, y_shape, optimizer, layers)
 
-def ds_chain(route_stat, k_cpt, optimizer):
+def ds_chain(optimizer):
     layers = [ReConvMax(*tf_specs[-1][:3]), LogReg(tf_specs[-1][0])]
     for spec in reversed(tf_specs[:-1]):
         layers = [ReConvMax(*spec[:3]), LogReg(spec[3]), layers]
     layers = [ToPyramidLLN(*tf_specs[0][:2]), LogReg(tf_specs[0][3]), layers]
-    hypers = dict(route_stat=route_stat, k_cpt=k_cpt, validate=True, ϵ=ϵ_ds)
-    return DSNet(x0_shape, y_shape, gen_router, optimizer, hypers, layers)
+    return DSNet(x0_shape, y_shape, gen_router, optimizer, layers)

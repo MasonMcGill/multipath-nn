@@ -25,7 +25,7 @@ def minimize_expected(net, cost, optimizer):
 # Error Mapping
 ################################################################################
 
-def add_error_mapping(ℓ, λ):
+def add_error_mapping(ℓ, route_stat, λ, ϵ=1e-3):
     ℓ.μ_tr = tf.Variable(0.0, trainable=False)
     ℓ.μ_vl = tf.Variable(0.0, trainable=False)
     ℓ.v_tr = tf.Variable(1.0, trainable=False)
@@ -36,14 +36,16 @@ def add_error_mapping(ℓ, λ):
     v_batch = (
         tf.reduce_sum(ℓ.p_tr * tf.square(ℓ.c_err - μ_batch))
         / tf.reduce_sum(ℓ.p_tr))
-    ℓ.update_μv_tr = tf.group(
-        tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch),
-        tf.assign(ℓ.v_tr, λ * ℓ.v_tr + (1 - λ) * v_batch))
-    ℓ.update_μv_vl = tf.group(
-        tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch),
-        tf.assign(ℓ.v_vl, λ * ℓ.v_vl + (1 - λ) * v_batch))
+    ℓ.update_μv_tr = tf.cond(
+        route_stat, lambda: tf.no_op(), lambda: tf.group(
+            tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch),
+            tf.assign(ℓ.v_tr, λ * ℓ.v_tr + (1 - λ) * v_batch)))
+    ℓ.update_μv_vl = tf.cond(
+        route_stat, lambda: tf.no_op(), lambda: tf.group(
+            tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch),
+            tf.assign(ℓ.v_vl, λ * ℓ.v_vl + (1 - λ) * v_batch)))
     ℓ.c_err_cor = (
-        tf.sqrt((ℓ.v_vl + 1e-3) / (ℓ.v_tr + 1e-3))
+        tf.sqrt((ℓ.v_vl + ϵ) / (ℓ.v_tr + ϵ))
         * (ℓ.c_err - ℓ.μ_tr) + ℓ.μ_vl)
 
 ################################################################################
@@ -64,11 +66,7 @@ def link(layer_tree, x, y, mode):
         link(s, source.x, y, mode)
 
 class Net(metaclass=ABCMeta):
-    default_hypers = {}
-
-    def __init__(self, x0_shape, y_shape, hypers, layers):
-        full_hyper_dict = {**self.__class__.default_hypers, **hypers}
-        self.hypers = Namespace(**full_hyper_dict)
+    def __init__(self, x0_shape, y_shape, layers):
         self.x0 = tf.placeholder(tf.float32, (None,) + x0_shape)
         self.y = tf.placeholder(tf.float32, (None,) + y_shape)
         self.mode = tf.placeholder_with_default('ev', ())
@@ -127,7 +125,7 @@ class Net(metaclass=ABCMeta):
 
 class SRNet(Net):
     def __init__(self, x0_shape, y_shape, optimizer, layers):
-        super().__init__(x0_shape, y_shape, {}, layers)
+        super().__init__(x0_shape, y_shape, layers)
         for ℓ in self.layers:
             ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
         c_tr = sum(ℓ.c_err + ℓ.c_mod for ℓ in self.layers)
@@ -148,8 +146,7 @@ def route_sinks_ds_dyn(ℓ, opts):
     ℓ.router = opts.router_gen(ℓ)
     ℓ.router.link(ℓ.x, None, opts.mode)
     π_stat = (
-        (opts.ϵ / len(ℓ.sinks)
-         + (1 - opts.ϵ) * (1 - np.eye(len(ℓ.sinks))[0]) / (len(ℓ.sinks) - 1))
+        (1 - np.eye(len(ℓ.sinks))[0]) / (len(ℓ.sinks) - 1)
         * tf.ones_like(ℓ.router.x))
     π_tr = tf.cond(opts.route_stat, lambda: π_stat, lambda: (
         (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ)
@@ -164,31 +161,36 @@ def route_sinks_ds_dyn(ℓ, opts):
 def route_ds(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    add_error_mapping(ℓ, opts.λ)
+    add_error_mapping(ℓ, opts.route_stat, opts.λ_em)
     if len(ℓ.sinks) < 2: route_sinks_ds_stat(ℓ, opts)
     else: route_sinks_ds_dyn(ℓ, opts)
 
 class DSNet(Net):
-    default_hypers = dict(
-        k_cpt=0.0, ϵ=0.1, τ=1, validate=False, λ=0.9,
-        route_stat=tf.constant(False))
-
-    def __init__(self, x0_shape, y_shape, router_gen, optimizer, hypers, root):
-        super().__init__(x0_shape, y_shape, hypers, root)
-        ϕ = self.hypers
+    def __init__(self, x0_shape, y_shape, router_gen, optimizer, root):
+        super().__init__(x0_shape, y_shape, root)
+        ϕ = self.hypers = Namespace(
+            route_stat=tf.placeholder_with_default(False, ()),
+            k_cpt=tf.placeholder_with_default(0.0, ()),
+            ϵ=tf.placeholder_with_default(1e-3, ()),
+            τ=tf.placeholder_with_default(1.0, ()),
+            do_em=tf.placeholder_with_default(False, ()),
+            λ_em=tf.placeholder_with_default(0.9, ()))
         n_pts = tf.shape(self.x0)[0]
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, mode=self.mode, **vars(ϕ)))
         c_err = sum(
-            ℓ.p_tr * (ℓ.c_err_cor if ϕ.validate else ℓ.c_err)
+            ℓ.p_tr * tf.cond(ϕ.do_em, lambda: ℓ.c_err_cor, lambda: ℓ.c_err)
             for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * ϕ.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
                     for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_mod
-        with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
-            self.train_op = minimize_expected(
-                self, tf.reduce_mean(c_tr), optimizer)
+        def train_op_stat():
+            return optimizer.minimize(tf.reduce_mean(c_tr))
+        def train_op_dyn():
+            with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
+                return minimize_expected(self, tf.reduce_mean(c_tr), optimizer)
+        self.train_op = tf.cond(ϕ.route_stat, train_op_stat, train_op_dyn)
         self.validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
         self.sess.run(tf.initialize_all_variables())
 
@@ -225,8 +227,7 @@ def route_sinks_cr_dyn(ℓ, opts):
     ℓ.router = opts.router_gen(ℓ)
     ℓ.router.link(ℓ.x, None, opts.mode)
     π_stat = (
-        (opts.ϵ / len(ℓ.sinks)
-         + (1 - opts.ϵ) * (1 - np.eye(len(ℓ.sinks))[0]) / (len(ℓ.sinks) - 1))
+        (1 - np.eye(len(ℓ.sinks))[0]) / (len(ℓ.sinks) - 1)
         * tf.ones_like(ℓ.router.x))
     π_ev = tf.cond(opts.route_stat, lambda: π_stat, lambda: (
         tf.to_float(tf.equal(
@@ -252,31 +253,37 @@ def route_sinks_cr_dyn(ℓ, opts):
 def route_cr(ℓ, p_tr, p_ev, opts):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    add_error_mapping(ℓ, opts.λ)
+    add_error_mapping(ℓ, opts.λ_em)
     if len(ℓ.sinks) < 2: route_sinks_cr_stat(ℓ, opts)
     else: route_sinks_cr_dyn(ℓ, opts)
 
 class CRNet(Net):
-    default_hypers = dict(
-        k_cpt=0.0, k_cre=1e-3, ϵ=0.1, validate=False, λ=0.9,
-        optimistic=True, route_stat=tf.constant(False))
-
-    def __init__(self, x0_shape, y_shape, router_gen, optimizer, hypers, root):
-        super().__init__(x0_shape, y_shape, hypers, root)
-        ϕ = self.hypers
+    def __init__(self, x0_shape, y_shape, router_gen, optimizer, root):
+        super().__init__(x0_shape, y_shape, root)
+        ϕ = self.hypers = Namespace(
+            route_stat=tf.placeholder_with_default(False, ()),
+            k_cpt=tf.placeholder_with_default(0.0, ()),
+            k_cre=tf.placeholder_with_default(1e-3, ()),
+            ϵ=tf.placeholder_with_default(0.1, ()),
+            optimistic=tf.placeholder_with_default(True, ()),
+            do_em=tf.placeholder_with_default(False, ()),
+            λ_em=tf.placeholder_with_default(0.9, ()))
         n_pts = tf.shape(self.x0)[0]
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, mode=self.mode, **vars(ϕ)))
         c_err = sum(
-            ℓ.p_tr * (ℓ.c_err_cor if ϕ.validate else ℓ.c_err)
+            ℓ.p_tr * tf.cond(ϕ.do_em, lambda: ℓ.c_err_cor, lambda: ℓ.c_err)
             for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * ϕ.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
         c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_cre + c_mod
-        with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
-            self.train_op = minimize_expected(
-                self, tf.reduce_mean(c_tr), optimizer)
+        def train_op_stat():
+            return optimizer.minimize(tf.reduce_mean(c_tr))
+        def train_op_dyn():
+            with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
+                return minimize_expected(self, tf.reduce_mean(c_tr), optimizer)
+        self.train_op = tf.cond(ϕ.route_stat, train_op_stat, train_op_dyn)
         self.validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
         self.sess.run(tf.initialize_all_variables())
 

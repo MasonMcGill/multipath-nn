@@ -22,27 +22,27 @@ dataset = Dataset('data/cifar-10.mat')
 dataset.y_tr = np.dot(dataset.y_tr, w_cls)
 dataset.y_ts = np.dot(dataset.y_ts, w_cls)
 
-x0_shape = dataset.x0_shape
-y_shape = dataset.y_shape
-
 ################################################################################
 # Define training hyperparameters.
 ################################################################################
 
-t_train = tf.placeholder(tf.float32, ())
-n_epochs = 50
-
-optimizer = tf.train.MomentumOptimizer(
-    0.1 / 10**(t_train // 10), 0.9)
+n_epochs = 40
+λ_learn = 0.1
+μ_learn = 0.9
+t_anneal = 10
 
 ################################################################################
 # Train networks.
 ################################################################################
 
-for n_tf in reversed(range(len(tf_specs) + 1)):
-    net = sr_chain(n_tf, optimizer)
-    train(net, dataset, n_epochs=n_epochs,
-          name=('SRNet (n_tf=%i)' % n_tf),
-          hypers=(lambda t: {t_train: t}))
-    makedirs('nets/sr-chains', exist_ok=True)
-    net.write('nets/sr-chains/n_tf=%i.tfn' % n_tf)
+for n_tf in range(len(tf_specs) + 1):
+    with tf.Graph().as_default():
+        t_train = tf.placeholder(tf.float32, ())
+        optimizer = tf.train.MomentumOptimizer(
+            λ_learn / 10**(t_train // t_anneal), μ_learn)
+        net = sr_chain(n_tf, optimizer)
+        train(net, dataset, n_epochs=n_epochs,
+              name=('SRNet (n_tf=%i)' % n_tf),
+              hypers=(lambda t: {t_train: t}))
+        makedirs('nets/sr-chains', exist_ok=True)
+        net.write('nets/sr-chains/net%i.tfn' % n_tf)

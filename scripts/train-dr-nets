@@ -24,21 +24,21 @@ dataset.y_tr = np.dot(dataset.y_tr, w_cls)
 dataset.y_ts = np.dot(dataset.y_ts, w_cls)
 dataset.y_vl = np.dot(dataset.y_vl, w_cls)
 
-x0_shape = dataset.x0_shape
-y_shape = dataset.y_shape
-
 ################################################################################
 # Define network hyperparameters.
 ################################################################################
 
-t_train = tf.placeholder(tf.float32, ())
-n_sr_epochs = 20
-n_dr_epochs = 10
+n_epochs_sr = 40
+λ_learn_sr = 0.1
+μ_learn_sr = 0.9
+t_anneal_sr = 10
 
-optimizer = tf.train.MomentumOptimizer(
-    0.1 / 10**(t_train // 10), 0.9)
+n_epochs_dr = 10
+λ_learn_dr = 0.01
+μ_learn_dr = 0.9
+t_anneal_dr = 10
 
-k_cpts = [0, *[1e-10 * 2**i for i in range(11)]]
+k_cpts = [0, *(1e-10 * 2**i for i in range(11))]
 
 ################################################################################
 # Ensure that the output directory exists.
@@ -51,20 +51,32 @@ makedirs('nets/ds-chains', exist_ok=True)
 ################################################################################
 
 if not isfile('nets/ds-chains/sr.tfn'):
-    net = ds_chain(tf.constant(True), 0, optimizer)
-    train(net, dataset, n_epochs=n_sr_epochs,
-          name='DSNet (routing="stat")',
-          hypers=(lambda t: {t_train: t}))
-    net.write('nets/ds-chains/sr.tfn')
+    with tf.Graph().as_default():
+        t_train = tf.placeholder(tf.float32, ())
+        optimizer = tf.train.MomentumOptimizer(
+            λ_learn_sr / 10**(t_train // t_anneal_sr), μ_learn_sr)
+        net = ds_chain(optimizer)
+        train(net, dataset, n_epochs=n_epochs_sr,
+              name='DSNet (routing="stat")',
+              hypers=(lambda t: {
+                  net.hypers.route_stat: True,
+                  t_train: t}))
+        net.write('nets/ds-chains/sr.tfn')
 
 ################################################################################
 # Train dynamically-routed networks, initializing with the SR net's parameters.
 ################################################################################
 
 for i, k_cpt in enumerate(k_cpts):
-    net = ds_chain(tf.constant(False), k_cpt, optimizer)
-    net.read('nets/ds-chains/sr.tfn')
-    train(net, dataset, n_epochs=n_dr_epochs,
-          name=('DSNet (routing="dyn", k_cpt=%e)' % k_cpt),
-          hypers=(lambda t: {t_train: t + n_sr_epochs}))
-    net.write('nets/ds-chains/dr%i.tfn' % i)
+    with tf.Graph().as_default():
+        t_train = tf.placeholder(tf.float32, ())
+        optimizer = tf.train.MomentumOptimizer(
+            λ_learn_dr / 10**(t_train // t_anneal_dr), μ_learn_dr)
+        net = ds_chain(optimizer)
+        net.read('nets/ds-chains/sr.tfn')
+        train(net, dataset, n_epochs=n_epochs_dr,
+              name=('DSNet (routing="dyn", k_cpt=%g)' % k_cpt),
+              hypers=(lambda t: {
+                  net.hypers.k_cpt: k_cpt,
+                  t_train: t + n_sr_epochs}))
+        net.write('nets/ds-chains/dr%i.tfn' % i)

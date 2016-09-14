@@ -21,7 +21,7 @@ def mean_net_state(net, tensors, data, hypers):
         return {k: sums[k] / count for k in tensors.keys()}
 
 def layer_desc(ℓ, stats_tr, stats_ts):
-    return {'type': type(ℓ).__name__, 'hypers': ℓ.hypers,
+    return {'type': type(ℓ).__name__,
             'stats_tr': {k: v for (t, k), v in stats_tr.items() if t == ℓ},
             'stats_ts': {k: v for (t, k), v in stats_ts.items() if t == ℓ},
             'sinks': [layer_desc(s, stats_tr, stats_ts) for s in ℓ.sinks]}
@@ -29,11 +29,10 @@ def layer_desc(ℓ, stats_tr, stats_ts):
 def net_desc(net, dataset, hypers, state={}):
     stats_tr = mean_net_state(net, state, dataset.training_batches(), hypers)
     stats_ts = mean_net_state(net, state, dataset.test_batches(), hypers)
-    return {
-        'type': type(net).__name__, 'hypers': net.hypers,
-        'stats_tr': {k: v for (t, k), v in stats_tr.items() if t == net},
-        'stats_ts': {k: v for (t, k), v in stats_ts.items() if t == net},
-        'root': layer_desc(net.root, stats_tr, stats_ts)}
+    return {'type': type(net).__name__,
+            'stats_tr': {k: v for (t, k), v in stats_tr.items() if t == net},
+            'stats_ts': {k: v for (t, k), v in stats_ts.items() if t == net},
+            'root': layer_desc(net.root, stats_tr, stats_ts)}
 
 ################################################################################
 # Descriptor Rendering
