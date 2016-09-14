@@ -40,3 +40,23 @@ def train(net, dataset, hypers=(lambda t: {}), batch_size=64,
                 net_desc(net, dataset, ϕ, net_state),
                 '%s — Epoch %i' % (name, t + 1)))
     return net_desc(net, dataset, hypers(n_epochs), net_state)
+
+################################################################################
+# Network Training Profiling
+################################################################################
+
+def profile(path, net, dataset, hypers=(lambda t: {}),
+            batch_size=64, n_warm=10):
+    ϕ = hypers(0)
+    run_opts = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+    run_meta = tf.RunMetadata()
+    for i, (x0, y) in enumerate(dataset.training_batches(batch_size)):
+        feed = {net.x0: x0, net.y: y, net.mode: 'tr', **ϕ}
+        if i < n_warm:
+            net.sess.run(net.train_op, feed, run_opts)
+        else:
+            net.sess.run(net.train_op, feed, run_opts, run_meta)
+            tl = tf.python.client.timeline.Timeline(run_meta.step_stats)
+            with open(path, 'w') as f:
+                f.write(tl.generate_chrome_trace_format())
+            break
