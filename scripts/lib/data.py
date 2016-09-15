@@ -25,11 +25,13 @@ class Dataset:
         self.y_tr = archive['y_tr']
         self.y_ts = archive['y_ts']
         if n_vl > 0:
+            rand.seed(0)
             order = rand.permutation(len(self.x0_tr))
             self.x0_vl = np.take(self.x0_tr, order[:n_vl], axis=0)
             self.y_vl = np.take(self.y_tr, order[:n_vl], axis=0)
             self.x0_tr = np.take(self.x0_tr, order[n_vl:], axis=0)
             self.y_tr = np.take(self.y_tr, order[n_vl:], axis=0)
+            rand.seed(None)
         else:
             self.x0_vl = self.x0_tr[:0]
             self.y_vl = self.y_tr[:0]
