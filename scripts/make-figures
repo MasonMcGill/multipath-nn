@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+'''
+Generate accuracy/efficiency plots.
+'''
+from json import loads
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+################################################################################
+# Load experiment results.
+################################################################################
+
+with open('stats/sr-chains.json', 'r') as f:
+    sr_log = loads(f.read())
+with open('stats/ds-chains.json', 'r') as f:
+    ds_log = loads(f.read())
+
+sr_err = [1 - net['stats_ts']['acc'] for net in sr_log]
+ds_err = [1 - net['stats_ts']['acc'] for net in ds_log]
+sr_moc = [net['stats_ts']['moc'] for net in sr_log]
+ds_moc = [net['stats_ts']['moc'] for net in ds_log]
+
+################################################################################
+# Generate figures.
+################################################################################
+
+plt.figure(figsize=(6, 4))
+plt.xlabel('Mean Op Count')
+plt.ylabel('Error Rate')
+plt.plot(sr_moc, sr_err, label='Static Routing')
+plt.plot(ds_moc, ds_err, label='Decision Smoothing')
+plt.legend()
+plt.tight_layout()
+plt.savefig('figures/acc-eff.pdf')

@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+'''
+Measure network performance statistics.
+'''
+from json import dumps
+from os.path import isfile
+
+import numpy as np
+import tensorflow as tf
+
+from lib.data import Dataset
+from lib.desc import net_desc
+from lib.nets import ds_chain, sr_chain
+
+################################################################################
+# Define network statistics.
+################################################################################
+
+def p_cor(net, ℓ):
+    δ_cor = tf.equal(tf.argmax(ℓ.x, 1), tf.argmax(net.y, 1))
+    return ℓ.p_ev * tf.to_float(δ_cor)
+
+def p_inc(net, ℓ):
+    δ_inc = tf.not_equal(tf.argmax(ℓ.x, 1), tf.argmax(net.y, 1))
+    return ℓ.p_ev * tf.to_float(δ_inc)
+
+def acc_and_moc(net, dataset):
+    return net_desc(net, dataset, {}, {
+        (net, 'acc'): sum(p_cor(net, ℓ) for ℓ in net.leaves),
+        (net, 'moc'): sum(ℓ.p_ev * ℓ.n_ops for ℓ in net.layers),
+        **{(ℓ, 'p_cor'): p_cor(net, ℓ) for ℓ in net.leaves},
+        **{(ℓ, 'p_inc'): p_inc(net, ℓ) for ℓ in net.leaves}})
+
+################################################################################
+# Load and preprocess data.
+################################################################################
+
+m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
+w_cls = np.transpose([np.equal(m_cls, i) for i in range(2)])
+
+dataset = Dataset('data/cifar-10.mat', n_vl=1280)
+dataset.y_tr = np.dot(dataset.y_tr, w_cls)
+dataset.y_ts = np.dot(dataset.y_ts, w_cls)
+dataset.y_vl = np.dot(dataset.y_vl, w_cls)
+
+################################################################################
+# Measure the statistics of all trained nets.
+################################################################################
+
+def measure_stats(src):
+    log = []
+    i = 0
+    while isfile('nets/%s/net%i.tfn' % (src, i)):
+        with tf.Graph().as_default():
+            net = sr_chain(i, tf.train.MomentumOptimizer(0, 0))
+            net.read('nets/%s/net%i.tfn' % (src, i))
+            sr_log.append(acc_and_moc(net, dataset))
+        i += 1
+    with open('stats/%s.json' % src, 'w') as f:
+        f.write(dumps(log, indent=2))
+
+measure_stats('sr-chains')
+measure_stats('ds-chains')
