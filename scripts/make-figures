@@ -3,6 +3,7 @@
 Generate accuracy/efficiency plots.
 '''
 from json import loads
+from os import makedirs
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -20,6 +21,12 @@ sr_err = [1 - net['stats_ts']['acc'] for net in sr_log]
 ds_err = [1 - net['stats_ts']['acc'] for net in ds_log]
 sr_moc = [net['stats_ts']['moc'] for net in sr_log]
 ds_moc = [net['stats_ts']['moc'] for net in ds_log]
+
+################################################################################
+# Ensure that the output directory exists.
+################################################################################
+
+makedirs('figures', exist_ok=True)
 
 ################################################################################
 # Generate figures.

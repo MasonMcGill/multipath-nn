@@ -3,6 +3,7 @@
 Measure network performance statistics.
 '''
 from json import dumps
+from os import makedirs
 from os.path import isfile
 
 import numpy as np
@@ -42,6 +43,12 @@ dataset = Dataset('data/cifar-10.mat', n_vl=1280)
 dataset.y_tr = np.dot(dataset.y_tr, w_cls)
 dataset.y_ts = np.dot(dataset.y_ts, w_cls)
 dataset.y_vl = np.dot(dataset.y_vl, w_cls)
+
+################################################################################
+# Ensure that the output directory exists.
+################################################################################
+
+makedirs('stats', exist_ok=True)
 
 ################################################################################
 # Measure the statistics of all trained nets.
