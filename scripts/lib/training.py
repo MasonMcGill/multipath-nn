@@ -20,7 +20,7 @@ def p_inc(net, ℓ):
 # Network Training
 ################################################################################
 
-def train(net, dataset, hypers=(lambda t: {}), batch_size=64,
+def train(net, dataset, hypers=(lambda t: {}), batch_size=256,
           n_epochs=100, logging_period=5, name='Network'):
     net_state = {
         (net, 'acc'): sum(p_cor(net, ℓ) for ℓ in net.leaves),
@@ -46,7 +46,7 @@ def train(net, dataset, hypers=(lambda t: {}), batch_size=64,
 ################################################################################
 
 def profile(path, net, dataset, hypers=(lambda t: {}),
-            batch_size=64, n_warm=10):
+            batch_size=256, n_warm=10):
     ϕ = hypers(0)
     run_opts = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
     run_meta = tf.RunMetadata()
