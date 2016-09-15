@@ -9,7 +9,7 @@ import numpy as np
 import tensorflow as tf
 
 from lib.data import Dataset
-from lib.nets import ds_chain
+from lib.nets import ds_chain, k_cpts
 from lib.training import train
 
 ################################################################################
@@ -25,20 +25,13 @@ dataset.y_ts = np.dot(dataset.y_ts, w_cls)
 dataset.y_vl = np.dot(dataset.y_vl, w_cls)
 
 ################################################################################
-# Define network hyperparameters.
+# Define training hyperparameters.
 ################################################################################
 
-n_epochs_sr = 40
-λ_learn_sr = 0.1
-μ_learn_sr = 0.9
-t_anneal_sr = 10
-
-n_epochs_dr = 10
-λ_learn_dr = 0.01
-μ_learn_dr = 0.9
-t_anneal_dr = 10
-
-k_cpts = [0, *(1e-10 * 2**i for i in range(11))]
+n_epochs = 80
+λ_learn = 0.1
+μ_learn = 0.9
+t_anneal = 20
 
 ################################################################################
 # Ensure that the output directory exists.
@@ -47,36 +40,16 @@ k_cpts = [0, *(1e-10 * 2**i for i in range(11))]
 makedirs('nets/ds-chains', exist_ok=True)
 
 ################################################################################
-# Train a statically-routed network.
-################################################################################
-
-if not isfile('nets/ds-chains/sr.tfn'):
-    with tf.Graph().as_default():
-        t_train = tf.placeholder(tf.float32, ())
-        optimizer = tf.train.MomentumOptimizer(
-            λ_learn_sr / 10**(t_train // t_anneal_sr), μ_learn_sr)
-        net = ds_chain(optimizer)
-        train(net, dataset, n_epochs=n_epochs_sr,
-              name='DSNet (routing="stat")',
-              hypers=(lambda t: {
-                  net.hypers.route_stat: True,
-                  t_train: t}))
-        net.write('nets/ds-chains/sr.tfn')
-
-################################################################################
-# Train dynamically-routed networks, initializing with the SR net's parameters.
+# Train dynamically-routed networks.
 ################################################################################
 
 for i, k_cpt in enumerate(k_cpts):
     with tf.Graph().as_default():
         t_train = tf.placeholder(tf.float32, ())
         optimizer = tf.train.MomentumOptimizer(
-            λ_learn_dr / 10**(t_train // t_anneal_dr), μ_learn_dr)
+            λ_learn / 10**(t_train // t_anneal), μ_learn)
         net = ds_chain(optimizer)
-        net.read('nets/ds-chains/sr.tfn')
-        train(net, dataset, n_epochs=n_epochs_dr,
+        train(net, dataset, n_epochs=n_epochs,
               name=('DSNet (routing="dyn", k_cpt=%g)' % k_cpt),
-              hypers=(lambda t: {
-                  net.hypers.k_cpt: k_cpt,
-                  t_train: t + n_sr_epochs}))
-        net.write('nets/ds-chains/dr%i.tfn' % i)
+              hypers=(lambda t: {net.hypers.k_cpt: k_cpt, t_train: t}))
+        net.write('nets/ds-chains/net%i.tfn' % i)

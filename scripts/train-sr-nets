@@ -26,10 +26,10 @@ dataset.y_ts = np.dot(dataset.y_ts, w_cls)
 # Define training hyperparameters.
 ################################################################################
 
-n_epochs = 40
+n_epochs = 80
 λ_learn = 0.1
 μ_learn = 0.9
-t_anneal = 10
+t_anneal = 20
 
 ################################################################################
 # Train networks.

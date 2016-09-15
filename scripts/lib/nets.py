@@ -14,7 +14,9 @@ y_shape = (2,)
 
 conv_supp = 3
 router_n_chan = 16
+do_em = True
 
+k_cpts = [0, *(1e-10 * 4**i for i in range(5))]
 k_l2 = 1e-4
 σ_w = 1e-2
 
@@ -59,7 +61,7 @@ class ReConvMax(Chain):
 class LogReg(Chain):
     def __init__(self, shape0):
         super().__init__(
-            SelectPyramidTop(shape0=shape0),
+            SelectPyramidTop(shape=tf_specs[-1][-1]),
             LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=σ_w),
             Softmax(), CrossEntropyError())
 
@@ -85,4 +87,4 @@ def ds_chain(optimizer):
     for spec in reversed(tf_specs[:-1]):
         layers = [ReConvMax(*spec[:3]), LogReg(spec[3]), layers]
     layers = [ToPyramidLLN(*tf_specs[0][:2]), LogReg(tf_specs[0][3]), layers]
-    return DSNet(x0_shape, y_shape, gen_router, optimizer, layers)
+    return DSNet(x0_shape, y_shape, gen_router, do_em, optimizer, layers)
