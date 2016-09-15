@@ -53,7 +53,7 @@ class ReConvMax(Chain):
         super().__init__(
             MultiscaleConvMax(
                 shape0=shape0, n_scales=n_scales, n_chan=n_chan,
-                supp=conv_supp, k_l2=k_l2, σ_w=σ_w),
+                supp=conv_supp, res=True, k_l2=k_l2, σ_w=σ_w),
             BatchNorm(), Rect())
 
 class LogReg(Chain):
