@@ -14,10 +14,10 @@ y_shape = (2,)
 
 conv_supp = 3
 router_n_chan = 16
-do_em = True
+do_em = False
 
 k_cpts = [0, *(1e-10 * 4**i for i in range(5))]
-k_l2 = 1e-4
+k_l2 = 1e-3
 σ_w = 1e-2
 
 TFSpec = namedtuple(

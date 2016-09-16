@@ -28,10 +28,12 @@ dataset.y_vl = np.dot(dataset.y_vl, w_cls)
 # Define training hyperparameters.
 ################################################################################
 
-n_epochs = 80
-λ_learn = 0.1
+n_epochs = 50
+λ_learn = 0.01
 μ_learn = 0.9
-t_anneal = 20
+
+τ0 = 100
+t_anneal = 5
 
 ################################################################################
 # Ensure that the output directory exists.
@@ -45,11 +47,11 @@ makedirs('nets/ds-chains', exist_ok=True)
 
 for i, k_cpt in enumerate(k_cpts):
     with tf.Graph().as_default():
-        t_train = tf.placeholder(tf.float32, ())
-        optimizer = tf.train.MomentumOptimizer(
-            λ_learn / 10**(t_train // t_anneal), μ_learn)
+        optimizer = tf.train.MomentumOptimizer(λ_learn, μ_learn)
         net = ds_chain(optimizer)
         train(net, dataset, n_epochs=n_epochs,
               name=('DSNet (routing="dyn", k_cpt=%g)' % k_cpt),
-              hypers=(lambda t: {net.hypers.k_cpt: k_cpt, t_train: t}))
+              hypers=(lambda t: {
+                  net.hypers.τ: τ0 / 2**(t / t_anneal),
+                  net.hypers.k_cpt: k_cpt}))
         net.write('nets/ds-chains/net%i.tfn' % i)
