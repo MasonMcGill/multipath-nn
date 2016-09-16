@@ -143,9 +143,12 @@ def route_sinks_ds_stat(ℓ, opts):
 def route_sinks_ds_dyn(ℓ, opts):
     ℓ.router = opts.router_gen(ℓ)
     ℓ.router.link(ℓ.x, None, opts.mode)
-    π_tr = (
-        (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ)
-        + opts.ϵ / len(ℓ.sinks))
+    def n_leaves(ℓ): return (
+        1 if len(ℓ.sinks) == 0
+        else sum(map(n_leaves, ℓ.sinks)))
+    b_struct = np.log(list(map(n_leaves, ℓ.sinks)))
+    π_tr = ((1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ + b_struct)
+            + opts.ϵ / len(ℓ.sinks))
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
@@ -215,10 +218,14 @@ def route_sinks_cr_stat(ℓ, opts):
 def route_sinks_cr_dyn(ℓ, opts):
     ℓ.router = opts.router_gen(ℓ)
     ℓ.router.link(ℓ.x, None, opts.mode)
+    def n_leaves(ℓ): return (
+        1 if len(ℓ.sinks) == 0
+        else sum(map(n_leaves, ℓ.sinks)))
+    w_struct = list(map(n_leaves, ℓ.sinks)) / sum(map(n_leaves, ℓ.sinks))
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
-    π_tr = opts.ϵ / len(ℓ.sinks) + (1 - opts.ϵ) * π_ev
+    π_tr = opts.ϵ * w_struct + (1 - opts.ϵ) * π_ev
     for i, s in enumerate(ℓ.sinks):
         route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
     ℓ.c_ev = (
