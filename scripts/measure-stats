@@ -61,7 +61,7 @@ def measure_stats(src):
         with tf.Graph().as_default():
             net = sr_chain(i, tf.train.MomentumOptimizer(0, 0))
             net.read('nets/%s/net%i.tfn' % (src, i))
-            sr_log.append(acc_and_moc(net, dataset))
+            log.append(acc_and_moc(net, dataset))
         i += 1
     with open('stats/%s.json' % src, 'w') as f:
         f.write(dumps(log, indent=2))
