@@ -4,6 +4,14 @@
 - Add DS routing to short-circuit the network, saving computation
 - Compare with CR routing
 
+# "Tricks"
+- Use either decision smoothing or cost regression.
+- Use spatial pyramids for spatial data.
+- Adjust learning rates depending on data flow.
+- Use ResNets (maybe).
+- Do error mapping (maybe).
+- Anneal the routing policy (maybe).
+
 # Experiments
 
 - Static routing vs. dynamic routing (experiment 1)
