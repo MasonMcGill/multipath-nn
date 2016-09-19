@@ -1,8 +1,8 @@
 from collections import namedtuple
 
 from lib.layer_types import (
-    BatchNorm, Chain, CrossEntropyError, LinTrans, MultiscaleConvMax,
-    MultiscaleLLN, Rect, SelectPyramidTop, Softmax, ToPyramid)
+    BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
+    SelectPyramidTop, Softmax, SquaredError, ToPyramid)
 from lib.net_types import DSNet, SRNet
 
 ################################################################################
@@ -14,9 +14,8 @@ y_shape = (2,)
 
 conv_supp = 3
 router_n_chan = 16
-do_em = False
 
-k_cpts = [0, *(1e-10 * 4**i for i in range(5))]
+k_cpts = [0, *(1e-10 * 2**i for i in range(11))]
 k_l2 = 1e-3
 σ_w = 1e-2
 
@@ -28,14 +27,14 @@ TFSpec = namedtuple(
 tf_specs = [
     TFSpec((32, 32), 4, 16, (32, 32)),
     TFSpec((32, 32), 4, 16, (32, 32)),
-    TFSpec((32, 32), 4, 16, (32, 32)),
-    TFSpec((32, 32), 3, 32, (16, 16)),
+    TFSpec((32, 32), 3, 16, (16, 16)),
     TFSpec((16, 16), 3, 32, (16, 16)),
     TFSpec((16, 16), 3, 32, (16, 16)),
-    TFSpec((16, 16), 2, 64, (8, 8)),
+    TFSpec((16, 16), 2, 32, (8, 8)),
     TFSpec((8, 8), 2, 64, (8, 8)),
     TFSpec((8, 8), 2, 64, (8, 8)),
-    TFSpec((8, 8), 1, 128, (4, 4)),
+    TFSpec((8, 8), 1, 64, (4, 4)),
+    TFSpec((4, 4), 1, 128, (4, 4)),
     TFSpec((4, 4), 1, 128, (4, 4)),
     TFSpec((4, 4), 1, 128, (4, 4))]
 
@@ -55,7 +54,7 @@ class ReConvMax(Chain):
         super().__init__(
             MultiscaleConvMax(
                 shape0=shape0, n_scales=n_scales, n_chan=n_chan,
-                supp=conv_supp, res=True, k_l2=k_l2, σ_w=σ_w),
+                supp=conv_supp, k_l2=k_l2, σ_w=σ_w),
             BatchNorm(), Rect())
 
 class LogReg(Chain):
@@ -63,7 +62,7 @@ class LogReg(Chain):
         super().__init__(
             SelectPyramidTop(shape=tf_specs[-1][-1]),
             LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=σ_w),
-            Softmax(), CrossEntropyError())
+            Softmax(), SquaredError())
 
 def gen_router(ℓ):
     return Chain(
@@ -82,7 +81,7 @@ def sr_chain(n_tf, optimizer):
     layers = [ToPyramidLLN(*tf_specs[0][:2]), layers]
     return SRNet(x0_shape, y_shape, optimizer, layers)
 
-def ds_chain(optimizer):
+def ds_chain(do_em, optimizer):
     layers = [ReConvMax(*tf_specs[-1][:3]), LogReg(tf_specs[-1][0])]
     for spec in reversed(tf_specs[:-1]):
         layers = [ReConvMax(*spec[:3]), LogReg(spec[3]), layers]
