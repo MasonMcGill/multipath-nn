@@ -39,7 +39,7 @@ def acc_and_moc(net, dataset):
 m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
 w_cls = np.transpose([np.equal(m_cls, i) for i in range(2)])
 
-dataset = Dataset('data/cifar-10.mat', n_vl=1280)
+dataset = Dataset('data/cifar-10.mat')
 dataset.y_tr = np.dot(dataset.y_tr, w_cls)
 dataset.y_ts = np.dot(dataset.y_ts, w_cls)
 dataset.y_vl = np.dot(dataset.y_vl, w_cls)
@@ -54,17 +54,18 @@ makedirs('stats', exist_ok=True)
 # Measure the statistics of all trained nets.
 ################################################################################
 
-def measure_stats(src):
+def measure_stats(src, net_constr):
     log = []
     i = 0
     while isfile('nets/%s/net%i.tfn' % (src, i)):
         with tf.Graph().as_default():
-            net = sr_chain(i, tf.train.MomentumOptimizer(0, 0))
+            net = net_constr(i)
             net.read('nets/%s/net%i.tfn' % (src, i))
             log.append(acc_and_moc(net, dataset))
         i += 1
     with open('stats/%s.json' % src, 'w') as f:
         f.write(dumps(log, indent=2))
 
-measure_stats('sr-chains')
-measure_stats('ds-chains')
+optimizer = tf.train.MomentumOptimizer(0, 0)
+measure_stats('sr-chains', lambda i: sr_chain(i, optimizer))
+measure_stats('ds-chains', lambda i: ds_chain(optimizer))
