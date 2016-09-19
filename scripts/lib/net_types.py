@@ -146,11 +146,11 @@ def route_sinks_ds_dyn(ℓ, opts):
     def n_leaves(ℓ): return (
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
-    b_struct = np.log(list(map(n_leaves, ℓ.sinks)))
-    π_tr = ((1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ + b_struct)
-            + opts.ϵ / len(ℓ.sinks))
+    w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
+    π_tr = ((1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ + np.log(w_struct))
+            + opts.ϵ * w_struct)
     π_ev = tf.to_float(tf.equal(
-        tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
+        tf.expand_dims(tf.to_int32(tf.argmax(π_tr, 1)), 1),
         tf.range(len(ℓ.sinks))))
     for i, s in enumerate(ℓ.sinks):
         route_ds(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
@@ -167,7 +167,7 @@ class DSNet(Net):
         super().__init__(x0_shape, y_shape, root)
         ϕ = self.hypers = Namespace(
             k_cpt=tf.placeholder_with_default(0.0, ()),
-            ϵ=tf.placeholder_with_default(1e-3, ()),
+            ϵ=tf.placeholder_with_default(0.1, ()),
             τ=tf.placeholder_with_default(1.0, ()),
             λ_em=tf.placeholder_with_default(0.9, ()))
         n_pts = tf.shape(self.x0)[0]
@@ -221,7 +221,7 @@ def route_sinks_cr_dyn(ℓ, opts):
     def n_leaves(ℓ): return (
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
-    w_struct = list(map(n_leaves, ℓ.sinks)) / sum(map(n_leaves, ℓ.sinks))
+    w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
