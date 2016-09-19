@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+'''
+Download and format MNIST, CIFAR-10, and CIFAR-100.
+'''
 from os import makedirs
 from os.path import join
 from shutil import unpack_archive
