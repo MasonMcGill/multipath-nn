@@ -67,5 +67,5 @@ def train_ds_chains():
 # Train networks.
 ################################################################################
 
-targets = {'sr-chains': train_sr_chains(), 'ds-chains': train_ds_chains()}
+targets = {'sr-chains': train_sr_chains, 'ds-chains': train_ds_chains}
 targets[args.target]()
