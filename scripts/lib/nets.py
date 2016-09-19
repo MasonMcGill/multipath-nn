@@ -81,9 +81,9 @@ def sr_chain(n_tf, optimizer):
     layers = [ToPyramidLLN(*tf_specs[0][:2]), layers]
     return SRNet(x0_shape, y_shape, optimizer, layers)
 
-def ds_chain(do_em, optimizer):
+def ds_chain(optimizer):
     layers = [ReConvMax(*tf_specs[-1][:3]), LogReg(tf_specs[-1][0])]
     for spec in reversed(tf_specs[:-1]):
         layers = [ReConvMax(*spec[:3]), LogReg(spec[3]), layers]
     layers = [ToPyramidLLN(*tf_specs[0][:2]), LogReg(tf_specs[0][3]), layers]
-    return DSNet(x0_shape, y_shape, gen_router, do_em, optimizer, layers)
+    return DSNet(x0_shape, y_shape, gen_router, optimizer, layers)

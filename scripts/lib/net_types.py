@@ -163,7 +163,7 @@ def route_ds(ℓ, p_tr, p_ev, opts):
     else: route_sinks_ds_dyn(ℓ, opts)
 
 class DSNet(Net):
-    def __init__(self, x0_shape, y_shape, router_gen, do_em, optimizer, root):
+    def __init__(self, x0_shape, y_shape, router_gen, optimizer, root):
         super().__init__(x0_shape, y_shape, root)
         ϕ = self.hypers = Namespace(
             k_cpt=tf.placeholder_with_default(0.0, ()),
@@ -173,9 +173,7 @@ class DSNet(Net):
         n_pts = tf.shape(self.x0)[0]
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, mode=self.mode, **vars(ϕ)))
-        c_err = (
-            sum(ℓ.p_tr * ℓ.c_err_cor for ℓ in self.layers) if do_em
-            else sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers))
+        c_err = sum(ℓ.p_tr * ℓ.c_err_cor for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * ϕ.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
                     for ℓ in self.layers)
@@ -250,8 +248,8 @@ def route_cr(ℓ, p_tr, p_ev, opts):
     else: route_sinks_cr_dyn(ℓ, opts)
 
 class CRNet(Net):
-    def __init__(self, x0_shape, y_shape, router_gen, optimistic,
-                 do_em, optimizer, root):
+    def __init__(self, x0_shape, y_shape, router_gen,
+                 optimistic, optimizer, root):
         super().__init__(x0_shape, y_shape, root)
         ϕ = self.hypers = Namespace(
             k_cpt=tf.placeholder_with_default(0.0, ()),
@@ -262,9 +260,7 @@ class CRNet(Net):
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, optimistic=optimistic,
                            mode=self.mode, **vars(ϕ)))
-        c_err = (
-            sum(ℓ.p_tr * ℓ.c_err_cor for ℓ in self.layers) if do_em
-            else sum(ℓ.p_tr * ℓ.c_err for ℓ in self.layers))
+        c_err = sum(ℓ.p_tr * ℓ.c_err_cor for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * ϕ.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
         c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
