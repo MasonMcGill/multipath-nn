@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+'''
+Train statically- or dynamically-routed networks.
+'''
+from argparse import ArgumentParser
+from os import makedirs
+
+import numpy as np
+import tensorflow as tf
+
+from lib.data import Dataset
+from lib.nets import ds_chain, k_cpts, sr_chain, tf_specs
+from lib.training import train
+
+################################################################################
+# Parse command-line arguments.
+################################################################################
+
+parser = ArgumentParser(description=__doc__)
+parser.add_argument('target', help='the type of network to train',
+                    choices=['sr-chains', 'ds-chains'])
+args = parser.parse_args()
+
+################################################################################
+# Load and preprocess data.
+################################################################################
+
+m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
+w_cls = np.transpose([np.equal(m_cls, i) for i in range(2)])
+
+dataset = Dataset('data/cifar-10.mat')
+dataset.y_tr = np.dot(dataset.y_tr, w_cls)
+dataset.y_ts = np.dot(dataset.y_ts, w_cls)
+dataset.y_vl = np.dot(dataset.y_vl, w_cls)
+
+################################################################################
+# Define training hyperparameters.
+################################################################################
+
+n_epochs = 50
+batch_size = 256
+
+################################################################################
+# Define training functions.
+################################################################################
+
+def train_sr_chains():
+    makedirs('nets/sr-chains', exist_ok=True)
+    for n_tf in range(len(tf_specs) + 1):
+        with tf.Graph().as_default():
+            net = sr_chain(n_tf)
+            train(net, dataset, n_epochs=n_epochs, batch_size=batch_size,
+                  name=('SRNet (n_tf=%i)' % n_tf))
+            net.write('nets/sr-chains/net%i.tfn' % n_tf)
+
+def train_ds_chains():
+    makedirs('nets/ds-chains', exist_ok=True)
+    for i, k_cpt in enumerate(k_cpts):
+        with tf.Graph().as_default():
+            net = ds_chain(tf.train.MomentumOptimizer(λ_learn, μ_learn))
+            train(net, dataset, n_epochs=n_epochs, batch_size=batch_size,
+                  name=('DSNet (routing="dyn", k_cpt=%g)' % k_cpt),
+                  hypers=(lambda t: {net.hypers.k_cpt: k_cpt}))
+            net.write('nets/ds-chains/net%i.tfn' % i)
+
+################################################################################
+# Train networks.
+################################################################################
+
+targets = {'sr-chains': train_sr_chains(), 'ds-chains': train_ds_chains()}
+targets[args.target]()
