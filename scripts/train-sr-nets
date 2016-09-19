@@ -27,9 +27,14 @@ dataset.y_ts = np.dot(dataset.y_ts, w_cls)
 ################################################################################
 
 n_epochs = 50
-λ_learn = 0.1
+λ_learn = 1e-3
 μ_learn = 0.9
-t_anneal = 5
+
+################################################################################
+# Ensure that the output directory exists.
+################################################################################
+
+makedirs('nets/sr-chains', exist_ok=True)
 
 ################################################################################
 # Train networks.
@@ -37,12 +42,7 @@ t_anneal = 5
 
 for n_tf in range(len(tf_specs) + 1):
     with tf.Graph().as_default():
-        t_train = tf.placeholder(tf.float32, ())
-        optimizer = tf.train.MomentumOptimizer(
-            λ_learn / 2**(t_train / t_anneal), μ_learn)
-        net = sr_chain(n_tf, optimizer)
-        train(net, dataset, n_epochs=n_epochs,
-              name=('SRNet (n_tf=%i)' % n_tf),
-              hypers=(lambda t: {t_train: t}))
+        net = sr_chain(n_tf)
+        train(net, dataset, n_epochs=n_epochs, name=('SRNet (n_tf=%i)' % n_tf))
         makedirs('nets/sr-chains', exist_ok=True)
         net.write('nets/sr-chains/net%i.tfn' % n_tf)

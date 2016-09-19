@@ -124,10 +124,14 @@ class Net(metaclass=ABCMeta):
 class SRNet(Net):
     def __init__(self, x0_shape, y_shape, optimizer, layers):
         super().__init__(x0_shape, y_shape, layers)
+        ϕ = self.hypers = Namespace(
+            λ_lrn=tf.placeholder_with_default(1e-3, ()),
+            μ_lrn=tf.placeholder_with_default(0.9, ()))
         for ℓ in self.layers:
             ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
         c_tr = sum(ℓ.c_err + ℓ.c_mod for ℓ in self.layers)
-        self.train_op = optimizer.minimize(tf.reduce_mean(c_tr))
+        opt = tf.train.MomentumOptimizer(ϕ.λ_lrn, ϕ.μ_lrn)
+        self.train_op = opt.minimize(tf.reduce_mean(c_tr))
         self.sess.run(tf.initialize_all_variables())
 
 ################################################################################
@@ -163,13 +167,15 @@ def route_ds(ℓ, p_tr, p_ev, opts):
     else: route_sinks_ds_dyn(ℓ, opts)
 
 class DSNet(Net):
-    def __init__(self, x0_shape, y_shape, router_gen, optimizer, root):
+    def __init__(self, x0_shape, y_shape, router_gen, root):
         super().__init__(x0_shape, y_shape, root)
         ϕ = self.hypers = Namespace(
             k_cpt=tf.placeholder_with_default(0.0, ()),
             ϵ=tf.placeholder_with_default(0.1, ()),
             τ=tf.placeholder_with_default(1.0, ()),
-            λ_em=tf.placeholder_with_default(0.9, ()))
+            λ_em=tf.placeholder_with_default(0.9, ()),
+            λ_lrn=tf.placeholder_with_default(1e-3, ()),
+            μ_lrn=tf.placeholder_with_default(0.9, ()))
         n_pts = tf.shape(self.x0)[0]
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, mode=self.mode, **vars(ϕ)))
@@ -178,9 +184,9 @@ class DSNet(Net):
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
                     for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_mod
+        opt = tf.train.MomentumOptimizer(ϕ.λ_lrn, ϕ.μ_lrn)
         with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
-            self.train_op = minimize_expected(
-                self, tf.reduce_mean(c_tr), optimizer)
+            self.train_op = minimize_expected(self, tf.reduce_mean(c_tr), opt)
         self.validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
         self.sess.run(tf.initialize_all_variables())
 
@@ -248,14 +254,15 @@ def route_cr(ℓ, p_tr, p_ev, opts):
     else: route_sinks_cr_dyn(ℓ, opts)
 
 class CRNet(Net):
-    def __init__(self, x0_shape, y_shape, router_gen,
-                 optimistic, optimizer, root):
+    def __init__(self, x0_shape, y_shape, router_gen, optimistic, root):
         super().__init__(x0_shape, y_shape, root)
         ϕ = self.hypers = Namespace(
             k_cpt=tf.placeholder_with_default(0.0, ()),
             k_cre=tf.placeholder_with_default(1e-3, ()),
             ϵ=tf.placeholder_with_default(0.1, ()),
-            λ_em=tf.placeholder_with_default(0.9, ()))
+            λ_em=tf.placeholder_with_default(0.9, ()),
+            λ_lrn=tf.placeholder_with_default(1e-3, ()),
+            μ_lrn=tf.placeholder_with_default(0.9, ()))
         n_pts = tf.shape(self.x0)[0]
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, optimistic=optimistic,
@@ -265,9 +272,9 @@ class CRNet(Net):
         c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
         c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_cre + c_mod
+        opt = tf.train.MomentumOptimizer(ϕ.λ_lrn, ϕ.μ_lrn)
         with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
-            self.train_op = minimize_expected(
-                self, tf.reduce_mean(c_tr), optimizer)
+            self.train_op = minimize_expected(self, tf.reduce_mean(c_tr), opt)
         self.validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
         self.sess.run(tf.initialize_all_variables())
 

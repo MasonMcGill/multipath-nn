@@ -66,6 +66,5 @@ def measure_stats(src, net_constr):
     with open('stats/%s.json' % src, 'w') as f:
         f.write(dumps(log, indent=2))
 
-optimizer = tf.train.MomentumOptimizer(0, 0)
-measure_stats('sr-chains', lambda i: sr_chain(i, optimizer))
-measure_stats('ds-chains', lambda i: ds_chain(optimizer))
+measure_stats('sr-chains', lambda i: sr_chain(i))
+measure_stats('ds-chains', lambda i: ds_chain())
