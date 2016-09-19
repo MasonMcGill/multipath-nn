@@ -122,7 +122,7 @@ class Net(metaclass=ABCMeta):
 ################################################################################
 
 class SRNet(Net):
-    def __init__(self, x0_shape, y_shape, optimizer, layers):
+    def __init__(self, x0_shape, y_shape, layers):
         super().__init__(x0_shape, y_shape, layers)
         ϕ = self.hypers = Namespace(
             λ_lrn=tf.placeholder_with_default(1e-3, ()),
