@@ -57,7 +57,7 @@ def train_ds_chains():
     makedirs('nets/ds-chains', exist_ok=True)
     for i, k_cpt in enumerate(k_cpts):
         with tf.Graph().as_default():
-            net = ds_chain(tf.train.MomentumOptimizer(λ_learn, μ_learn))
+            net = ds_chain()
             train(net, dataset, n_epochs=n_epochs, batch_size=batch_size,
                   name=('DSNet (routing="dyn", k_cpt=%g)' % k_cpt),
                   hypers=(lambda t: {net.hypers.k_cpt: k_cpt}))
