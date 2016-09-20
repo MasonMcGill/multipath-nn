@@ -40,6 +40,9 @@ dataset.y_vl = np.dot(dataset.y_vl, w_cls)
 n_epochs = 50
 batch_size = 256
 
+λ_lrn_0 = 0.1
+t_anneal = 5
+
 ################################################################################
 # Define training functions.
 ################################################################################
@@ -49,7 +52,8 @@ def train_sr_chains():
     for n_tf in range(len(tf_specs) + 1):
         with tf.Graph().as_default():
             net = sr_chain(n_tf)
-            train(net, dataset, n_epochs=n_epochs, batch_size=batch_size,
+            hypers = lambda t: {net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)}
+            train(net, dataset, hypers, batch_size, n_epochs,
                   name=('SRNet (n_tf=%i)' % n_tf))
             net.write('nets/sr-chains/net%i.tfn' % n_tf)
 
@@ -58,9 +62,11 @@ def train_ds_chains():
     for i, k_cpt in enumerate(k_cpts):
         with tf.Graph().as_default():
             net = ds_chain()
-            train(net, dataset, n_epochs=n_epochs, batch_size=batch_size,
-                  name=('DSNet (routing="dyn", k_cpt=%g)' % k_cpt),
-                  hypers=(lambda t: {net.hypers.k_cpt: k_cpt}))
+            hypers = lambda t: {
+                net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
+                net.hypers.k_cpt: k_cpt}
+            train(net, dataset, hypers, batch_size, n_epochs,
+                  name=('DSNet (routing="dyn", k_cpt=%g)' % k_cpt))
             net.write('nets/ds-chains/net%i.tfn' % i)
 
 ################################################################################
