@@ -10,6 +10,7 @@ import numpy as np
 import tensorflow as tf
 
 from lib.data import Dataset
+from lib.desc import net_desc, render_net_desc
 from lib.nets import ds_chain, k_cpts, sr_chain, tf_specs
 
 ################################################################################
