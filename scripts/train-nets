@@ -13,13 +13,15 @@ from lib.nets import ds_chain, k_cpts, sr_chain, tf_specs
 from lib.training import train
 
 ################################################################################
-# Parse command-line arguments.
+# Define training hyperparameters.
 ################################################################################
 
-parser = ArgumentParser(description=__doc__)
-parser.add_argument('target', help='the type of network to train',
-                    choices=['sr-chains', 'ds-chains'])
-args = parser.parse_args()
+n_epochs = 50
+batch_size = 256
+n_vl = 1280
+
+λ_lrn_0 = 0.1
+t_anneal = 5
 
 ################################################################################
 # Load and preprocess data.
@@ -28,20 +30,10 @@ args = parser.parse_args()
 m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
 w_cls = np.transpose([np.equal(m_cls, i) for i in range(2)])
 
-dataset = Dataset('data/cifar-10.mat')
+dataset = Dataset('data/cifar-10.mat', n_vl=n_vl)
 dataset.y_tr = np.dot(dataset.y_tr, w_cls)
 dataset.y_ts = np.dot(dataset.y_ts, w_cls)
 dataset.y_vl = np.dot(dataset.y_vl, w_cls)
-
-################################################################################
-# Define training hyperparameters.
-################################################################################
-
-n_epochs = 50
-batch_size = 256
-
-λ_lrn_0 = 0.1
-t_anneal = 5
 
 ################################################################################
 # Define training functions.
@@ -53,9 +45,21 @@ def train_sr_chains():
         with tf.Graph().as_default():
             net = sr_chain(n_tf)
             hypers = lambda t: {net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)}
-            train(net, dataset, hypers, batch_size, n_epochs,
+            train(net, dataset, False, hypers, batch_size, n_epochs,
                   name=('SRNet (n_tf=%i)' % n_tf))
             net.write('nets/sr-chains/net%i.tfn' % n_tf)
+
+def train_ds_chains_no_em():
+    makedirs('nets/ds-chains-no-em', exist_ok=True)
+    for i, k_cpt in enumerate(k_cpts):
+        with tf.Graph().as_default():
+            net = ds_chain()
+            hypers = lambda t: {
+                net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
+                net.hypers.k_cpt: k_cpt}
+            train(net, dataset, False, hypers, batch_size, n_epochs,
+                  name=('DSNet (k_cpt=%g)' % k_cpt))
+            net.write('nets/ds-chains-no-em/net%i.tfn' % i)
 
 def train_ds_chains():
     makedirs('nets/ds-chains', exist_ok=True)
@@ -65,13 +69,27 @@ def train_ds_chains():
             hypers = lambda t: {
                 net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
                 net.hypers.k_cpt: k_cpt}
-            train(net, dataset, hypers, batch_size, n_epochs,
-                  name=('DSNet (routing="dyn", k_cpt=%g)' % k_cpt))
+            train(net, dataset, True, hypers, batch_size, n_epochs,
+                  name=('DSNet (k_cpt=%g)' % k_cpt))
             net.write('nets/ds-chains/net%i.tfn' % i)
+
+training_funcs = {
+    'sr-chains': train_sr_chains,
+    'ds-chains-no-em': train_ds_chains_no_em,
+    'ds-chains': train_ds_chains}
+
+################################################################################
+# Parse command-line arguments.
+################################################################################
+
+parser = ArgumentParser(description=__doc__)
+parser.add_argument('target', help='the type of network to train',
+                    choices=training_funcs.keys())
+
+args = parser.parse_args()
 
 ################################################################################
 # Train networks.
 ################################################################################
 
-targets = {'sr-chains': train_sr_chains, 'ds-chains': train_ds_chains}
-targets[args.target]()
+training_funcs[args.target]()
