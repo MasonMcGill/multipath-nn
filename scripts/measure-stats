@@ -25,12 +25,11 @@ def p_inc(net, ℓ):
     δ_inc = tf.not_equal(tf.argmax(ℓ.x, 1), tf.argmax(net.y, 1))
     return ℓ.p_ev * tf.to_float(δ_inc)
 
-def acc_and_moc(net, dataset):
-    return net_desc(net, dataset, {}, {
-        (net, 'acc'): sum(p_cor(net, ℓ) for ℓ in net.leaves),
-        (net, 'moc'): sum(ℓ.p_ev * ℓ.n_ops for ℓ in net.layers),
-        **{(ℓ, 'p_cor'): p_cor(net, ℓ) for ℓ in net.leaves},
-        **{(ℓ, 'p_inc'): p_inc(net, ℓ) for ℓ in net.leaves}})
+def acc_and_moc(net):
+    return {(net, 'acc'): sum(p_cor(net, ℓ) for ℓ in net.leaves),
+            (net, 'moc'): sum(ℓ.p_ev * ℓ.n_ops for ℓ in net.layers),
+            **{(ℓ, 'p_cor'): p_cor(net, ℓ) for ℓ in net.leaves},
+            **{(ℓ, 'p_inc'): p_inc(net, ℓ) for ℓ in net.leaves}}
 
 ################################################################################
 # Load and preprocess data.
@@ -61,7 +60,7 @@ def measure_stats(src, net_constr):
         with tf.Graph().as_default():
             net = net_constr(i)
             net.read('nets/%s/net%i.tfn' % (src, i))
-            log.append(acc_and_moc(net, dataset))
+            log.append(net_desc(net, dataset, {}, acc_and_moc(net)))
         i += 1
     with open('stats/%s.json' % src, 'w') as f:
         f.write(dumps(log, indent=2))
