@@ -28,23 +28,10 @@ def minimize_expected(net, cost, optimizer):
 def add_error_mapping(ℓ, λ, ϵ=1e-3):
     ℓ.μ_tr = tf.Variable(0.0, trainable=False)
     ℓ.μ_vl = tf.Variable(0.0, trainable=False)
-    ℓ.v_tr = tf.Variable(1.0, trainable=False)
-    ℓ.v_vl = tf.Variable(1.0, trainable=False)
-    μ_batch = (
-        tf.reduce_sum(ℓ.p_tr * ℓ.c_err)
-        / tf.reduce_sum(ℓ.p_tr))
-    v_batch = (
-        tf.reduce_sum(ℓ.p_tr * tf.square(ℓ.c_err - μ_batch))
-        / tf.reduce_sum(ℓ.p_tr))
-    ℓ.update_μv_tr = tf.group(
-        tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch),
-        tf.assign(ℓ.v_tr, λ * ℓ.v_tr + (1 - λ) * v_batch))
-    ℓ.update_μv_vl = tf.group(
-        tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch),
-        tf.assign(ℓ.v_vl, λ * ℓ.v_vl + (1 - λ) * v_batch))
-    ℓ.c_err_cor = (
-        tf.sqrt((ℓ.v_vl + ϵ) / (ℓ.v_tr + ϵ))
-        * (ℓ.c_err - ℓ.μ_tr) + ℓ.μ_vl)
+    μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.c_err) / tf.reduce_sum(ℓ.p_tr)
+    ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch)
+    ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch)
+    ℓ.c_err_cor = (ℓ.μ_vl + ϵ) / (ℓ.μ_tr + ϵ) * ℓ.c_err
 
 ################################################################################
 # Root Network Class
@@ -185,9 +172,9 @@ class DSNet(Net):
                     for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_mod
         opt = tf.train.MomentumOptimizer(ϕ.λ_lrn, ϕ.μ_lrn)
-        with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
+        with tf.control_dependencies([ℓ.update_μ_tr for ℓ in self.layers]):
             self.train_op = minimize_expected(self, tf.reduce_mean(c_tr), opt)
-        self.validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
+        self.validate_op = tf.group(*(ℓ.update_μ_vl for ℓ in self.layers))
         self.sess.run(tf.initialize_all_variables())
 
     @property
@@ -196,8 +183,6 @@ class DSNet(Net):
         for i, ℓ in enumerate(self.layers):
             setattr(result, 'μ_tr%i' % i, ℓ.μ_tr)
             setattr(result, 'μ_vl%i' % i, ℓ.μ_vl)
-            setattr(result, 'v_tr%i' % i, ℓ.v_tr)
-            setattr(result, 'v_vl%i' % i, ℓ.v_vl)
             for k, v in vars(ℓ.router.params).items():
                 setattr(result, 'router%i_%s' % (i, k), v)
         return result
@@ -273,9 +258,9 @@ class CRNet(Net):
         c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
         c_tr = c_err + c_cpt + c_cre + c_mod
         opt = tf.train.MomentumOptimizer(ϕ.λ_lrn, ϕ.μ_lrn)
-        with tf.control_dependencies([ℓ.update_μv_tr for ℓ in self.layers]):
+        with tf.control_dependencies([ℓ.update_μ_tr for ℓ in self.layers]):
             self.train_op = minimize_expected(self, tf.reduce_mean(c_tr), opt)
-        self.validate_op = tf.group(*(ℓ.update_μv_vl for ℓ in self.layers))
+        self.validate_op = tf.group(*(ℓ.update_μ_vl for ℓ in self.layers))
         self.sess.run(tf.initialize_all_variables())
 
     @property
@@ -284,8 +269,6 @@ class CRNet(Net):
         for i, ℓ in enumerate(self.layers):
             setattr(result, 'μ_tr%i' % i, ℓ.μ_tr)
             setattr(result, 'μ_vl%i' % i, ℓ.μ_vl)
-            setattr(result, 'v_tr%i' % i, ℓ.v_tr)
-            setattr(result, 'v_vl%i' % i, ℓ.v_vl)
             for k, v in vars(ℓ.router.params).items():
                 setattr(result, 'router%i_%s' % (i, k), v)
         return result
