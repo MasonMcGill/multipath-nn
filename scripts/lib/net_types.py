@@ -160,7 +160,7 @@ class DSNet(Net):
             k_cpt=tf.placeholder_with_default(0.0, ()),
             ϵ=tf.placeholder_with_default(0.1, ()),
             τ=tf.placeholder_with_default(1.0, ()),
-            λ_em=tf.placeholder_with_default(0.9, ()),
+            λ_em=tf.placeholder_with_default(0.5, ()),
             λ_lrn=tf.placeholder_with_default(1e-3, ()),
             μ_lrn=tf.placeholder_with_default(0.9, ()))
         n_pts = tf.shape(self.x0)[0]
@@ -245,7 +245,7 @@ class CRNet(Net):
             k_cpt=tf.placeholder_with_default(0.0, ()),
             k_cre=tf.placeholder_with_default(1e-3, ()),
             ϵ=tf.placeholder_with_default(0.1, ()),
-            λ_em=tf.placeholder_with_default(0.9, ()),
+            λ_em=tf.placeholder_with_default(0.5, ()),
             λ_lrn=tf.placeholder_with_default(1e-3, ()),
             μ_lrn=tf.placeholder_with_default(0.9, ()))
         n_pts = tf.shape(self.x0)[0]
