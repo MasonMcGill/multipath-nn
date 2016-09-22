@@ -31,7 +31,8 @@ def add_error_mapping(ℓ, λ, ϵ=1e-3):
     μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.c_err) / tf.reduce_sum(ℓ.p_tr)
     ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch)
     ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch)
-    ℓ.c_err_cor = (ℓ.μ_vl + ϵ) / (ℓ.μ_tr + ϵ) * ℓ.c_err
+    ℓ.c_err_cor = tf.cond(tf.equal(ℓ.μ_vl, 0), lambda: ℓ.c_err,
+                          lambda: (ℓ.μ_vl + ϵ) / (ℓ.μ_tr + ϵ) * ℓ.c_err)
 
 ################################################################################
 # Root Network Class
