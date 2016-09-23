@@ -3,7 +3,7 @@ from collections import namedtuple
 from lib.layer_types import (
     BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
     SelectPyramidTop, Softmax, SquaredError, ToPyramid)
-from lib.net_types import DSNet, SRNet
+from lib.net_types import CRNet, DSNet, SRNet
 
 ################################################################################
 # Network Hyperparameters
@@ -87,3 +87,10 @@ def ds_chain():
         layers = [ReConvMax(*spec[:3]), LogReg(spec[3]), layers]
     layers = [ToPyramidLLN(*tf_specs[0][:2]), LogReg(tf_specs[0][3]), layers]
     return DSNet(x0_shape, y_shape, gen_router, layers)
+
+def cr_chain(optimistic=True):
+    layers = [ReConvMax(*tf_specs[-1][:3]), LogReg(tf_specs[-1][0])]
+    for spec in reversed(tf_specs[:-1]):
+        layers = [ReConvMax(*spec[:3]), LogReg(spec[3]), layers]
+    layers = [ToPyramidLLN(*tf_specs[0][:2]), LogReg(tf_specs[0][3]), layers]
+    return CRNet(x0_shape, y_shape, gen_router, optimistic, layers)
