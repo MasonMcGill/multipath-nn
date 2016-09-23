@@ -4,6 +4,7 @@ Train statically- or dynamically-routed networks.
 '''
 from argparse import ArgumentParser
 from os import makedirs
+from os.path import dirname
 from random import shuffle
 
 import numpy as np
@@ -38,10 +39,8 @@ def acc_and_moc(net):
 n_epochs = 50
 logging_period = 5
 batch_size = 256
-n_vl = 1280
 
-λ_lrn_0 = 0.1
-t_anneal = 5
+λ_lrn = 1e-3
 
 ################################################################################
 # Load and preprocess data.
@@ -50,63 +49,43 @@ t_anneal = 5
 m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
 w_cls = np.transpose([np.equal(m_cls, i) for i in range(2)])
 
-dataset = Dataset('data/cifar-10.mat', n_vl=n_vl)
+dataset = Dataset('data/cifar-10.mat')
 dataset.y_tr = np.dot(dataset.y_tr, w_cls)
 dataset.y_ts = np.dot(dataset.y_ts, w_cls)
-dataset.y_vl = np.dot(dataset.y_vl, w_cls)
 
 ################################################################################
 # Define training functions.
 ################################################################################
 
-def train(dst, net, validate, hypers):
+def train(dst, net, hypers):
     net_state = acc_and_moc(net)
     for t in range(n_epochs):
         ϕ = hypers(t)
-        set_tr = [('tr', b) for b in dataset.training_batches(batch_size)]
-        set_vl = [('vl', b) for b in dataset.validation_batches(batch_size)]
-        batches = set_tr + set_vl
-        shuffle(batches)
-        for mode, (x0, y) in batches:
-            if validate and mode == 'vl':
-                net.validate(x0, y, ϕ)
-            else:
-                net.train(x0, y, ϕ)
+        for x0, y in dataset.training_batches(batch_size):
+            net.train(x0, y, ϕ)
         if (t + 1) % logging_period == 0:
             print(render_net_desc(
                 net_desc(net, dataset, ϕ, net_state),
                 '%s — Epoch %i' % (dst, t + 1)))
+    makedirs(dirname(dst), exist_ok=True)
     net.write(dst)
 
 def train_sr_chains():
-    makedirs('nets/sr-chains', exist_ok=True)
     for n_tf in range(len(tf_specs) + 1):
         with tf.Graph().as_default():
             net = sr_chain(n_tf)
-            train('nets/sr-chains/net%i.tfn' % n_tf, net, False, lambda t: {
-                net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)})
-
-def train_ds_chains_no_em():
-    makedirs('nets/ds-chains-no-em', exist_ok=True)
-    for i, k_cpt in enumerate(k_cpts):
-        with tf.Graph().as_default():
-            net = ds_chain()
-            train('nets/ds-chains-no-em/net%i.tfn' % i, net, False, lambda t: {
-                net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
-                net.hypers.k_cpt: k_cpt})
+            train('nets/sr-chains/net%i.tfn' % n_tf, net, lambda t: {
+                net.hypers.λ_lrn: λ_lrn})
 
 def train_ds_chains():
-    makedirs('nets/ds-chains', exist_ok=True)
     for i, k_cpt in enumerate(k_cpts):
         with tf.Graph().as_default():
             net = ds_chain()
-            train('nets/ds-chains/net%i.tfn' % i, net, True, lambda t: {
-                net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
-                net.hypers.k_cpt: k_cpt})
+            train('nets/ds-chains/net%i.tfn' % i, net, lambda t: {
+                net.hypers.λ_lrn: λ_lrn, net.hypers.k_cpt: k_cpt})
 
 training_targets = {
     'sr-chains': train_sr_chains,
-    'ds-chains-no-em': train_ds_chains_no_em,
     'ds-chains': train_ds_chains}
 
 ################################################################################
