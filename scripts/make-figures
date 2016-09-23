@@ -3,7 +3,8 @@
 Generate accuracy/efficiency plots.
 '''
 from json import loads
-from os import makedirs
+from os import listdir, makedirs
+from os.path import basename, splitext
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -12,15 +13,16 @@ import seaborn as sns
 # Load experiment results.
 ################################################################################
 
-with open('stats/sr-chains.json', 'r') as f:
-    sr_log = loads(f.read())
-with open('stats/ds-chains.json', 'r') as f:
-    ds_log = loads(f.read())
+logs = {}
 
-sr_err = [1 - net['stats_ts']['acc'] for net in sr_log]
-ds_err = [1 - net['stats_ts']['acc'] for net in ds_log]
-sr_moc = [net['stats_ts']['moc'] for net in sr_log]
-ds_moc = [net['stats_ts']['moc'] for net in ds_log]
+for log_name in listdir('stats'):
+    with open('stats/' + log_name, 'r') as f:
+        logs[splitext(log_name)[0]] = loads(f.read())
+
+errs = {name: [1 - net['stats_ts']['acc'] for net in log]
+        for name, log in logs.items()}
+mocs = {name: [net['stats_ts']['moc'] for net in log]
+        for name, log in logs.items()}
 
 ################################################################################
 # Ensure that the output directory exists.
@@ -32,11 +34,17 @@ makedirs('figures', exist_ok=True)
 # Generate figures.
 ################################################################################
 
-plt.figure(figsize=(6, 4))
-plt.xlabel('Mean Op Count')
-plt.ylabel('Error Rate')
-plt.plot(sr_moc, sr_err, label='Static Routing')
-plt.plot(ds_moc, ds_err, label='Decision Smoothing')
-plt.legend()
-plt.tight_layout()
-plt.savefig('figures/acc-eff.pdf')
+def make_acc_eff_plot(dst, src):
+    plt.figure(figsize=(6, 4))
+    plt.xlabel('Mean Op Count')
+    plt.ylabel('Error Rate')
+    for log_name, label in src:
+        plt.plot(mocs[log_name], errs[log_name], label=label)
+    plt.ylim(0, 0.2)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('figures/' + dst)
+
+make_acc_eff_plot('acc-eff.pdf', [
+    ('sr-chains', 'Static Routing'),
+    ('ds-chains', 'Decision Smoothing')])
