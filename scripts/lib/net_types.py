@@ -244,7 +244,7 @@ class CRNet(Net):
         super().__init__(x0_shape, y_shape, root)
         ϕ = self.hypers = Namespace(
             k_cpt=tf.placeholder_with_default(0.0, ()),
-            k_cre=tf.placeholder_with_default(1e-3, ()),
+            k_cre=tf.placeholder_with_default(0.1, ()),
             ϵ=tf.placeholder_with_default(0.1, ()),
             λ_em=tf.placeholder_with_default(0.5, ()),
             λ_lrn=tf.placeholder_with_default(1e-3, ()),
