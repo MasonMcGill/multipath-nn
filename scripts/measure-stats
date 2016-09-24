@@ -11,7 +11,7 @@ import tensorflow as tf
 
 from lib.data import Dataset
 from lib.desc import net_desc
-from lib.nets import cr_chain, ds_chain, sr_chain
+from lib.nets import cr_chain, cr_tree, ds_chain, ds_tree, sr_chain
 
 ################################################################################
 # Define network statistics.
@@ -68,3 +68,5 @@ def measure_stats(src, net_constr):
 measure_stats('sr-chains', lambda i: sr_chain(i))
 measure_stats('ds-chains', lambda i: ds_chain())
 measure_stats('cr-chains', lambda i: cr_chain())
+measure_stats('ds-trees', lambda i: ds_tree())
+measure_stats('cr-trees', lambda i: cr_tree())

@@ -71,26 +71,81 @@ def gen_router(ℓ):
         BatchNorm(), Rect(), LinTrans(n_chan=len(ℓ.sinks), k_l2=k_l2))
 
 ################################################################################
+# Layer Tree Construction Shorthand
+################################################################################
+
+def pyr():
+    return ToPyramidLLN(*tf_specs[0][:2])
+
+def reg(i=None):
+    return LogReg(tf_specs[0][0]) if i is None else LogReg(tf_specs[i][3])
+
+def rcm(i):
+    return ReConvMax(*tf_specs[i][:3])
+
+################################################################################
 # Network Constructors
 ################################################################################
 
 def sr_chain(n_tf):
-    layers = LogReg(tf_specs[n_tf-1][0])
-    for spec in reversed(tf_specs[:n_tf]):
-        layers = [ReConvMax(*spec[:3]), layers]
-    layers = [ToPyramidLLN(*tf_specs[0][:2]), layers]
+    layers = reg(n_tf - 1),
+    for i in reversed(range(n_tf)):
+        layers = [rcm(i), layers]
+    layers = [pyr(), layers]
     return SRNet(x0_shape, y_shape, layers)
 
 def ds_chain():
-    layers = [ReConvMax(*tf_specs[-1][:3]), LogReg(tf_specs[-1][0])]
-    for spec in reversed(tf_specs[:-1]):
-        layers = [ReConvMax(*spec[:3]), LogReg(spec[3]), layers]
-    layers = [ToPyramidLLN(*tf_specs[0][:2]), LogReg(tf_specs[0][3]), layers]
+    layers = [rcm(-1), reg(-1)]
+    for i in reversed(range(len(tf_specs) - 1)):
+        layers = [rcm(i), reg(i), layers]
+    layers = [pyr(), reg(), layers]
     return DSNet(x0_shape, y_shape, gen_router, layers)
 
 def cr_chain(optimistic=True):
-    layers = [ReConvMax(*tf_specs[-1][:3]), LogReg(tf_specs[-1][0])]
-    for spec in reversed(tf_specs[:-1]):
-        layers = [ReConvMax(*spec[:3]), LogReg(spec[3]), layers]
-    layers = [ToPyramidLLN(*tf_specs[0][:2]), LogReg(tf_specs[0][3]), layers]
-    return CRNet(x0_shape, y_shape, gen_router, optimistic, layers)
+    layers = [rcm(-1), reg(-1)]
+    for i in reversed(range(len(tf_specs) - 1)):
+        layers = [rcm(i), reg(i), layers]
+    layers = [pyr(), reg(), layers]
+    return CRNet(x0_shape, y_shape, gen_router,
+                 optimistic, layers)
+
+def ds_tree():
+    return DSNet(
+        x0_shape, y_shape, gen_router,
+        [pyr(), reg(),
+            [rcm(0), reg(0),
+                [rcm(1), reg(1),
+                    [rcm(2), reg(2),
+                        [rcm(3), reg(3)],
+                        [rcm(3), reg(3)]],
+                    [rcm(2), reg(2),
+                        [rcm(3), reg(3)],
+                        [rcm(3), reg(3)]]],
+                [rcm(1), reg(1),
+                    [rcm(2), reg(2),
+                        [rcm(3), reg(3)],
+                        [rcm(3), reg(3)]],
+                    [rcm(2), reg(2),
+                        [rcm(3), reg(3)],
+                        [rcm(3), reg(3)]]]]])
+
+def cr_tree(optimistic):
+    return CRNet(
+        x0_shape, y_shape,
+        gen_router, optimistic,
+        [pyr(), reg(),
+            [rcm(0), reg(0),
+                [rcm(1), reg(1),
+                    [rcm(2), reg(2),
+                        [rcm(3), reg(3)],
+                        [rcm(3), reg(3)]],
+                    [rcm(2), reg(2),
+                        [rcm(3), reg(3)],
+                        [rcm(3), reg(3)]]],
+                [rcm(1), reg(1),
+                    [rcm(2), reg(2),
+                        [rcm(3), reg(3)],
+                        [rcm(3), reg(3)]],
+                    [rcm(2), reg(2),
+                        [rcm(3), reg(3)],
+                        [rcm(3), reg(3)]]]]])

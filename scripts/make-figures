@@ -47,5 +47,7 @@ def make_acc_eff_plot(dst, src):
 
 make_acc_eff_plot('acc-eff.pdf', [
     ('sr-chains', 'Static Routing'),
-    ('ds-chains', 'Decision Smoothing'),
-    ('cr-chains', 'Cost Regression')])
+    ('ds-chains', 'Decision Smoothing Chains'),
+    ('cr-chains', 'Cost Regression Chains'),
+    ('ds-trees', 'Decision Smoothing Trees'),
+    ('cr-trees', 'Cost Regression Trees')])
