@@ -36,11 +36,12 @@ def acc_and_moc(net):
 # Define training hyperparameters.
 ################################################################################
 
-n_epochs = 50
+n_epochs = 25
 logging_period = 5
 batch_size = 256
 
-λ_lrn = 1e-3
+λ_lrn_0 = 0.1
+t_anneal = 5
 
 ################################################################################
 # Load and preprocess data.
@@ -75,21 +76,23 @@ def train_sr_chains():
         with tf.Graph().as_default():
             net = sr_chain(n_tf)
             train('nets/sr-chains/net%i.tfn' % n_tf, net, lambda t: {
-                net.hypers.λ_lrn: λ_lrn})
+                net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)})
 
 def train_ds_chains():
     for i, k_cpt in enumerate(k_cpts):
         with tf.Graph().as_default():
             net = ds_chain()
             train('nets/ds-chains/net%i.tfn' % i, net, lambda t: {
-                net.hypers.λ_lrn: λ_lrn, net.hypers.k_cpt: k_cpt})
+                net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
+                net.hypers.k_cpt: k_cpt})
 
 def train_cr_chains():
     for i, k_cpt in enumerate(k_cpts):
         with tf.Graph().as_default():
             net = cr_chain()
             train('nets/cr-chains/net%i.tfn' % i, net, lambda t: {
-                net.hypers.λ_lrn: λ_lrn, net.hypers.k_cpt: k_cpt})
+                net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
+                net.hypers.k_cpt: k_cpt})
 
 training_targets = {
     'sr-chains': train_sr_chains,
