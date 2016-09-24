@@ -15,7 +15,7 @@ y_shape = (2,)
 conv_supp = 3
 router_n_chan = 16
 
-k_cpts = [2e-9 * i for i in range(8)]
+k_cpts = [0, 1e-9, 2e-9, 4e-9, 8e-9, 1.6e-8]
 k_l2 = 1e-3
 σ_w = 1e-2
 
