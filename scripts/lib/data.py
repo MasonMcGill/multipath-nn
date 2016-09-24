@@ -44,11 +44,11 @@ class Dataset:
     def y_shape(self):
         return self.y_tr.shape[1:]
 
-    def training_batches(self, n=512):
+    def training_batches(self, n=128):
         yield from batches(self.x0_tr, self.y_tr, n)
 
-    def validation_batches(self, n=512):
+    def validation_batches(self, n=128):
         yield from batches(self.x0_vl, self.y_vl, n)
 
-    def test_batches(self, n=512):
+    def test_batches(self, n=128):
         yield from batches(self.x0_ts, self.y_ts, n)
