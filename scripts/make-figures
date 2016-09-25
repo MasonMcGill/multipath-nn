@@ -47,33 +47,47 @@ def make_acc_eff_plot(dst, src):
     plt.tight_layout()
     plt.savefig('figures/' + dst)
 
-def make_acc_node_link_diagrams(dst, log_name):
+def draw_acc_nld(ℓ, x, y, r):
+    p_cor = ℓ['sinks'][0]['stats_ts']['p_cor']
+    p_inc = ℓ['sinks'][0]['stats_ts']['p_inc']
+    p_tot = p_cor + p_inc
+    sinks = ℓ['sinks'][1:]
+    if p_tot > 0.005:
+        plt.pie([p_cor / p_tot, p_inc / p_tot],
+                center=(x, y), startangle=90,
+                radius=(np.sqrt(p_tot) / 2),
+                colors=[sns.color_palette()[0],
+                        sns.color_palette()[2]])
+    else:
+        plt.pie([1], center=(x, y),
+                radius=(np.sqrt(0.005) / 2),
+                colors=['k'])
+    for i, s in enumerate(sinks):
+        a = ((i + 1) / (len(sinks) + 1) - 0.5) * np.pi
+        x_s = x + np.cos(a)
+        y_s = y + r * np.sin(a)
+        plt.plot([x, x_s], [y, y_s], 'k', linewidth=2, zorder=-1)
+        draw_acc_nld(s, x_s, y_s, r / len(sinks))
+
+def nld_bounds(ℓ, x, y, r):
+    x0 = x; x1 = x
+    y0 = y; y1 = y
+    sinks = ℓ['sinks'][1:]
+    for i, s in enumerate(sinks):
+        a = ((i + 1) / (len(sinks) + 1) - 0.5) * np.pi
+        x_s = x + np.cos(a)
+        y_s = y + r * np.sin(a)
+        x2, x3, y2, y3 = nld_bounds(s, x_s, y_s, r / len(sinks))
+        x0 = min(x0, x2); x1 = max(x1, x3)
+        y0 = min(y0, y2); y1 = max(y1, y3)
+    return x0, x1, y0, y1
+
+def make_chain_acc_nld(dst, log_name):
     plt.figure()
     n_nets = len(logs[log_name])
-    max_depth = 0
+    max_depth = nld_bounds(logs[log_name][0]['root'], 0, 0, 1)[1]
     for i, net in enumerate(logs[log_name]):
-        ℓ = net['root']
-        depth = 0
-        while len(ℓ['sinks']) > 0:
-            p_cor = ℓ['sinks'][0]['stats_ts']['p_cor']
-            p_inc = ℓ['sinks'][0]['stats_ts']['p_inc']
-            p_tot = p_cor + p_inc
-            if depth > 0:
-                plt.plot([depth - 1, depth], [i, i], 'k',
-                         linewidth=3, zorder=-1)
-            if p_tot > 0.005:
-                plt.pie([p_cor / p_tot, p_inc / p_tot],
-                        center=(depth, i), startangle=90,
-                        radius=(np.sqrt(p_tot) / 2),
-                        colors=[sns.color_palette()[0],
-                                sns.color_palette()[2]])
-            else:
-                plt.pie([1], center=(depth, i),
-                        radius=(np.sqrt(0.005) / 2),
-                        colors=['k'])
-            ℓ = ℓ['sinks'][-1]
-            max_depth = max(depth, max_depth)
-            depth += 1
+        draw_acc_nld(net['root'], 0, i, 1)
     plt.arrow(0.4 * max_depth, -0.6, 0.2 * max_depth, 0, fc='#b0b0b0',
               ec='#b0b0b0', linewidth=3, head_width=0.075)
     plt.arrow(-0.6, 0.2 * (n_nets - 1), 0, 0.6 * (n_nets - 1), fc='#b0b0b0',
@@ -92,11 +106,32 @@ def make_acc_node_link_diagrams(dst, log_name):
     plt.tight_layout()
     plt.savefig('figures/' + dst)
 
+def make_tree_acc_nld(dst, log_name, i):
+    plt.figure()
+    net = logs[log_name][i]
+    draw_acc_nld(net['root'], 0, 0, 2)
+    x0, x1, y0, y1 = nld_bounds(net['root'], 0, 0, 2)
+    plt.arrow(0.35 * x1, y0 - 0.33, 0.3 * x1, 0, fc='#b0b0b0',
+              ec='#b0b0b0', linewidth=3, head_width=0.075)
+    plt.xlabel('Dataflow', fontsize='large', color='#909090')
+    plt.xlim(x0 - 0.4, x1 + 0.4)
+    plt.ylim(y0 - 0.4, y1 + 0.4)
+    plt.figlegend([
+        pch.Patch(color=sns.color_palette()[0]),
+        pch.Patch(color=sns.color_palette()[2])],
+        ['Correct Labels', 'Incorrect Labels'],
+        (0.72, 0.01), fontsize='small')
+    plt.gca().set_aspect('equal')
+    plt.gcf().set_size_inches(x1 - x0 + 2, y1 - y0 + 2)
+    plt.tight_layout()
+    plt.savefig('figures/' + dst)
+
 make_acc_eff_plot('acc-eff.pdf', [
     ('sr-chains', 'Static Routing'),
     ('ds-chains', 'Decision Smoothing Chains'),
     ('cr-chains', 'Cost Regression Chains'),
-    ('ds-trees', 'Decision Smoothing Trees'),
-    ('cr-trees', 'Cost Regression Trees')])
+    ('ds-trees', 'Decision Smoothing Trees')])
 
-make_acc_node_link_diagrams('acc-nld.pdf', 'ds-chains')
+make_chain_acc_nld('acc-nld-ds-chains.pdf', 'ds-chains')
+make_chain_acc_nld('acc-nld-cr-chains.pdf', 'cr-chains')
+make_tree_acc_nld('acc-nld-ds-trees.pdf', 'ds-trees', 0)
