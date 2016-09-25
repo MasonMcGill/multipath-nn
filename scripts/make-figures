@@ -6,7 +6,9 @@ from json import loads
 from os import listdir, makedirs
 from os.path import basename, splitext
 
+import matplotlib.patches as pch
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 
 ################################################################################
@@ -45,9 +47,56 @@ def make_acc_eff_plot(dst, src):
     plt.tight_layout()
     plt.savefig('figures/' + dst)
 
+def make_acc_node_link_diagrams(dst, log_name):
+    plt.figure()
+    n_nets = len(logs[log_name])
+    max_depth = 0
+    for i, net in enumerate(logs[log_name]):
+        ℓ = net['root']
+        depth = 0
+        while len(ℓ['sinks']) > 0:
+            p_cor = ℓ['sinks'][0]['stats_ts']['p_cor']
+            p_inc = ℓ['sinks'][0]['stats_ts']['p_inc']
+            p_tot = p_cor + p_inc
+            if depth > 0:
+                plt.plot([depth - 1, depth], [i, i], 'k',
+                         linewidth=3, zorder=-1)
+            if p_tot > 0.005:
+                plt.pie([p_cor / p_tot, p_inc / p_tot],
+                        center=(depth, i), startangle=90,
+                        radius=(np.sqrt(p_tot) / 2),
+                        colors=[sns.color_palette()[0],
+                                sns.color_palette()[2]])
+            else:
+                plt.pie([1], center=(depth, i),
+                        radius=(np.sqrt(0.005) / 2),
+                        colors=['k'])
+            ℓ = ℓ['sinks'][-1]
+            max_depth = max(depth, max_depth)
+            depth += 1
+    plt.arrow(0.4 * max_depth, -0.6, 0.2 * max_depth, 0, fc='#b0b0b0',
+              ec='#b0b0b0', linewidth=3, head_width=0.075)
+    plt.arrow(-0.6, 0.2 * (n_nets - 1), 0, 0.6 * (n_nets - 1), fc='#b0b0b0',
+              ec='#b0b0b0', linewidth=3, head_width=0.075)
+    plt.ylabel('Cost of Computation', fontsize='large', color='#909090')
+    plt.xlabel('Layer Index', fontsize='large', color='#909090')
+    plt.xlim(-0.7, max_depth + 0.7)
+    plt.ylim(-0.7, n_nets - 0.3)
+    plt.figlegend([
+        pch.Patch(color=sns.color_palette()[0]),
+        pch.Patch(color=sns.color_palette()[2])],
+        ['Correct Labels', 'Incorrect Labels'],
+        (0.82, 0.09), fontsize='medium')
+    plt.gca().set_aspect('equal')
+    plt.gcf().set_size_inches(max_depth + 2, n_nets + 2)
+    plt.tight_layout()
+    plt.savefig('figures/' + dst)
+
 make_acc_eff_plot('acc-eff.pdf', [
     ('sr-chains', 'Static Routing'),
     ('ds-chains', 'Decision Smoothing Chains'),
     ('cr-chains', 'Cost Regression Chains'),
     ('ds-trees', 'Decision Smoothing Trees'),
     ('cr-trees', 'Cost Regression Trees')])
+
+make_acc_node_link_diagrams('acc-nld.pdf', 'ds-chains')
