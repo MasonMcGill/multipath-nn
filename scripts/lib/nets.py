@@ -1,8 +1,8 @@
 from collections import namedtuple
 
 from lib.layer_types import (
-    BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
-    SelectPyramidTop, Softmax, SquaredError, ToPyramid)
+    BatchNorm, Chain, CrossEntropyError, LinTrans, MultiscaleConvMax,
+    MultiscaleLLN, Rect, SelectPyramidTop, Softmax, ToPyramid)
 from lib.net_types import CRNet, DSNet, SRNet
 
 ################################################################################
@@ -15,7 +15,7 @@ y_shape = (2,)
 conv_supp = 3
 router_n_chan = 16
 
-k_cpts = [0, 1e-9, 2e-9, 4e-9, 8e-9, 1.6e-8]
+k_cpts = [0, 1e-9, 4e-9, 1.6e-8]
 k_l2 = 1e-3
 σ_w = 1e-2
 
@@ -62,7 +62,7 @@ class LogReg(Chain):
         super().__init__(
             SelectPyramidTop(shape=tf_specs[-1][-1]),
             LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=σ_w),
-            Softmax(), SquaredError())
+            Softmax(), CrossEntropyError())
 
 def gen_router(ℓ):
     return Chain(
@@ -129,7 +129,7 @@ def ds_tree():
                         [rcm(3), reg(3)],
                         [rcm(3), reg(3)]]]]])
 
-def cr_tree(optimistic):
+def cr_tree(optimistic=True):
     return CRNet(
         x0_shape, y_shape,
         gen_router, optimistic,

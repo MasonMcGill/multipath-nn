@@ -39,9 +39,9 @@ def acc_and_moc(net):
 
 n_epochs = 25
 logging_period = 5
-batch_size = 256
+batch_size = 128
 
-λ_lrn_0 = 0.1
+λ_lrn_0 = 0.001
 t_anneal = 5
 
 ################################################################################
@@ -115,7 +115,7 @@ training_targets = {
     'sr-chains': train_sr_chains,
     'ds-chains': train_ds_chains,
     'cr-chains': train_cr_chains,
-    'ds-trees': train_cr_trees,
+    'ds-trees': train_ds_trees,
     'cr-trees': train_cr_trees}
 
 ################################################################################
