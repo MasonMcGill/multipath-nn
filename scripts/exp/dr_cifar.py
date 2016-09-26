@@ -13,7 +13,7 @@ from lib.net_types import CRNet, DSNet, SRNet
 ################################################################################
 
 def read_dataset():
-    return Dataset('data/cifar-10.mat')
+    return Dataset('data/cifar-10.mat', n_vl=1280)
 
 x0_shape = (32, 32, 3)
 y_shape = (10,)
