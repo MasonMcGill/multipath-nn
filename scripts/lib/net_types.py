@@ -11,12 +11,12 @@ from lib.layer_types import BatchNorm, Chain, Layer, LinTrans, Rect
 # Optimization
 ################################################################################
 
-def minimize_expected(net, cost, optimizer):
+def minimize_expected(net, cost, optimizer, router_lr_scale=1):
     lr_scales = {
-        θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
-        for ℓ in net.layers for θ in [
-            *vars(ℓ.router.params).values(),
-            *vars(ℓ.params).values()]}
+        **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
+           for ℓ in net.layers for θ in vars(ℓ.params).values()},
+        **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr))) * router_lr_scale
+           for ℓ in net.layers for θ in vars(ℓ.router.params).values()}}
     grads = optimizer.compute_gradients(cost)
     scaled_grads = [(lr_scales[θ] * g, θ) for g, θ in grads if g is not None]
     return optimizer.apply_gradients(scaled_grads)
@@ -245,7 +245,7 @@ class CRNet(Net):
         super().__init__(x0_shape, y_shape, root)
         ϕ = self.hypers = Namespace(
             k_cpt=tf.placeholder_with_default(0.0, ()),
-            k_cre=tf.placeholder_with_default(0.1, ()),
+            k_cre=tf.placeholder_with_default(0.01, ()),
             ϵ=tf.placeholder_with_default(0.1, ()),
             τ=tf.placeholder_with_default(1.0, ()),
             λ_em=tf.placeholder_with_default(0.9, ()),
@@ -262,7 +262,8 @@ class CRNet(Net):
         c_tr = c_err + c_cre + c_mod
         opt = tf.train.MomentumOptimizer(ϕ.λ_lrn, ϕ.μ_lrn)
         with tf.control_dependencies([ℓ.update_μ_tr for ℓ in self.layers]):
-            self.train_op = minimize_expected(self, tf.reduce_mean(c_tr), opt)
+            self.train_op = minimize_expected(
+                self, tf.reduce_mean(c_tr), opt, 1 / ϕ.k_cre)
         self.validate_op = tf.group(*(ℓ.update_μ_vl for ℓ in self.layers))
         self.sess.run(tf.initialize_all_variables())
 

@@ -29,6 +29,7 @@ conv_supp = 3
 router_n_chan = 16
 
 k_cpts = [0, 2e-9, 4e-9, 8e-9, 1.6e-8, 3.2e-8]
+k_cre = 0.01
 k_l2 = 1e-3
 σ_w = 1e-2
 
@@ -55,12 +56,12 @@ tf_specs = [
 # Training Hyperparameters
 ################################################################################
 
-n_epochs = 50
+n_epochs = 25
 logging_period = 5
 batch_size = 128
 
 λ_lrn_0 = 0.001
-t_anneal = 10
+t_anneal = 5
 
 ################################################################################
 # Network Components
@@ -88,11 +89,17 @@ class LogReg(Chain):
             LinTrans(n_chan=w_cls.shape[1], k_l2=k_l2, σ_w=σ_w),
             Softmax(), SuperclassCrossEntropyError(w_cls=w_cls))
 
-def gen_router(ℓ):
+def gen_ds_router(ℓ):
     return Chain(
         SelectPyramidTop(shape=tf_specs[-1][-1]),
         LinTrans(n_chan=router_n_chan, k_l2=k_l2, σ_w=σ_w),
         BatchNorm(), Rect(), LinTrans(n_chan=len(ℓ.sinks), k_l2=k_l2))
+
+def gen_cr_router(ℓ):
+    return Chain(
+        SelectPyramidTop(shape=tf_specs[-1][-1]),
+        LinTrans(n_chan=router_n_chan, k_l2=(k_l2 * k_cre), σ_w=σ_w),
+        BatchNorm(), Rect(), LinTrans(n_chan=len(ℓ.sinks), k_l2=(k_l2 * k_cre)))
 
 ################################################################################
 # Layer Tree Construction Shorthand
@@ -123,19 +130,19 @@ def ds_chain():
     for i in reversed(range(len(tf_specs) - 1)):
         layers = [rcm(i), reg(i), layers]
     layers = [pyr(), reg(), layers]
-    return DSNet(x0_shape, y_shape, gen_router, layers)
+    return DSNet(x0_shape, y_shape, gen_ds_router, layers)
 
 def cr_chain(optimistic=True):
     layers = [rcm(-1), reg(-1)]
     for i in reversed(range(len(tf_specs) - 1)):
         layers = [rcm(i), reg(i), layers]
     layers = [pyr(), reg(), layers]
-    return CRNet(x0_shape, y_shape, gen_router,
+    return CRNet(x0_shape, y_shape, gen_cr_router,
                  optimistic, layers)
 
 def ds_tree():
     return DSNet(
-        x0_shape, y_shape, gen_router,
+        x0_shape, y_shape, gen_ds_router,
         [pyr(), reg(),
             [rcm(0), reg(0),
                 [rcm(1), reg(1),
@@ -156,7 +163,7 @@ def ds_tree():
 def cr_tree(optimistic=True):
     return CRNet(
         x0_shape, y_shape,
-        gen_router, optimistic,
+        gen_cr_router, optimistic,
         [pyr(), reg(),
             [rcm(0), reg(0),
                 [rcm(1), reg(1),
