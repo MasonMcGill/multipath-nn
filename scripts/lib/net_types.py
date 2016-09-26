@@ -60,7 +60,9 @@ class Net(metaclass=ABCMeta):
         link(layers, self.x0, self.y, self.mode)
         self.train_op = tf.no_op()
         self.validate_op = tf.no_op()
-        self.sess = tf.Session()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.sess = tf.Session(config=config)
 
     def __del__(self):
         if hasattr(self, 'sess'):
