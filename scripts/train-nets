@@ -5,26 +5,33 @@ Train statically- or dynamically-routed networks.
 from argparse import ArgumentParser
 from os import makedirs
 from os.path import dirname
-from random import shuffle
 
 import numpy as np
 import tensorflow as tf
 
-from lib.data import Dataset
+from exp.dr_cifar import (
+    batch_size, cr_chain, cr_tree, ds_chain, ds_tree, k_cpts, logging_period,
+    n_epochs, read_dataset, sr_chain, t_anneal, tf_specs, w_cls, λ_lrn_0)
 from lib.desc import net_desc, render_net_desc
-from lib.nets import (cr_chain, cr_tree, ds_chain, ds_tree,
-                      k_cpts, sr_chain, tf_specs)
+
+################################################################################
+# Load the dataset.
+################################################################################
+
+dataset = read_dataset()
 
 ################################################################################
 # Define network statistics.
 ################################################################################
 
 def p_cor(net, ℓ):
-    δ_cor = tf.equal(tf.argmax(ℓ.x, 1), tf.argmax(net.y, 1))
+    y_sup = tf.matmul(net.y, w_cls)
+    δ_cor = tf.equal(tf.argmax(ℓ.x, 1), tf.argmax(y_sup, 1))
     return ℓ.p_ev * tf.to_float(δ_cor)
 
 def p_inc(net, ℓ):
-    δ_inc = tf.not_equal(tf.argmax(ℓ.x, 1), tf.argmax(net.y, 1))
+    y_sup = tf.matmul(net.y, w_cls)
+    δ_inc = tf.not_equal(tf.argmax(ℓ.x, 1), tf.argmax(y_sup, 1))
     return ℓ.p_ev * tf.to_float(δ_inc)
 
 def acc_and_moc(net):
@@ -32,28 +39,6 @@ def acc_and_moc(net):
             (net, 'moc'): sum(ℓ.p_ev * ℓ.n_ops for ℓ in net.layers),
             **{(ℓ, 'p_cor'): p_cor(net, ℓ) for ℓ in net.leaves},
             **{(ℓ, 'p_inc'): p_inc(net, ℓ) for ℓ in net.leaves}}
-
-################################################################################
-# Define training hyperparameters.
-################################################################################
-
-n_epochs = 25
-logging_period = 5
-batch_size = 128
-
-λ_lrn_0 = 0.001
-t_anneal = 5
-
-################################################################################
-# Load and preprocess data.
-################################################################################
-
-m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
-w_cls = np.transpose([np.equal(m_cls, i) for i in range(2)])
-
-dataset = Dataset('data/cifar-10.mat')
-dataset.y_tr = np.dot(dataset.y_tr, w_cls)
-dataset.y_ts = np.dot(dataset.y_ts, w_cls)
 
 ################################################################################
 # Define training functions.

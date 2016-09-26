@@ -1,21 +1,34 @@
 from collections import namedtuple
 
+import numpy as np
+
+from lib.data import Dataset
 from lib.layer_types import (
-    BatchNorm, Chain, CrossEntropyError, LinTrans, MultiscaleConvMax,
-    MultiscaleLLN, Rect, SelectPyramidTop, Softmax, ToPyramid)
+    BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
+    SelectPyramidTop, Softmax, SuperclassCrossEntropyError, ToPyramid)
 from lib.net_types import CRNet, DSNet, SRNet
+
+################################################################################
+# Dataset and  Subclass -> Superclass Mappings
+################################################################################
+
+def read_dataset():
+    return Dataset('data/cifar-10.mat')
+
+x0_shape = (32, 32, 3)
+y_shape = (10,)
+
+m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
+w_cls = np.transpose(np.float32([np.equal(m_cls, i) for i in range(2)]))
 
 ################################################################################
 # Network Hyperparameters
 ################################################################################
 
-x0_shape = (32, 32, 3)
-y_shape = (2,)
-
 conv_supp = 3
 router_n_chan = 16
 
-k_cpts = [0, 1e-9, 4e-9, 1.6e-8]
+k_cpts = [0, 2e-9, 4e-9, 8e-9, 1.6e-8, 3.2e-8]
 k_l2 = 1e-3
 σ_w = 1e-2
 
@@ -37,6 +50,17 @@ tf_specs = [
     TFSpec((4, 4), 1, 256, (4, 4)),
     TFSpec((4, 4), 1, 256, (4, 4)),
     TFSpec((4, 4), 1, 256, (4, 4))]
+
+################################################################################
+# Training Hyperparameters
+################################################################################
+
+n_epochs = 50
+logging_period = 5
+batch_size = 128
+
+λ_lrn_0 = 0.001
+t_anneal = 10
 
 ################################################################################
 # Network Components
@@ -61,8 +85,8 @@ class LogReg(Chain):
     def __init__(self, shape0):
         super().__init__(
             SelectPyramidTop(shape=tf_specs[-1][-1]),
-            LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=σ_w),
-            Softmax(), CrossEntropyError())
+            LinTrans(n_chan=w_cls.shape[1], k_l2=k_l2, σ_w=σ_w),
+            Softmax(), SuperclassCrossEntropyError(w_cls=w_cls))
 
 def gen_router(ℓ):
     return Chain(

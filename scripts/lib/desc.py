@@ -18,7 +18,7 @@ def mean_net_state(net, tensors, data, hypers):
             for k in tensors.keys():
                 sums[k] += np.sum(samples[k], 0)
             count += len(x0)
-        return {k: sums[k] / count for k in tensors.keys()}
+        return {k: (sums[k] / count).tolist() for k in tensors.keys()}
 
 def layer_desc(ℓ, stats_tr, stats_ts):
     return {'type': type(ℓ).__name__,

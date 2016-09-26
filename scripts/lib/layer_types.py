@@ -240,6 +240,17 @@ class CrossEntropyError(Layer):
         p_cls = ϕ.ϵ / n_cls + (1 - ϕ.ϵ) * x
         self.c_err = -tf.reduce_sum(y * tf.log(p_cls), 1)
 
+class SuperclassCrossEntropyError(Layer):
+    default_hypers = dict(w_cls=None, ϵ=1e-6)
+
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        ϕ = self.hypers
+        y_sup = tf.matmul(y, ϕ.w_cls)
+        n_cls = y_sup.get_shape()[1].value
+        p_cls = ϕ.ϵ / n_cls + (1 - ϕ.ϵ) * x
+        self.c_err = -tf.reduce_sum(y_sup * tf.log(p_cls), 1)
+
 ################################################################################
 # Compound Layers
 ################################################################################
