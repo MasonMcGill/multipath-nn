@@ -139,10 +139,10 @@ def route_sinks_ds_dyn(ℓ, opts):
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
     w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
-    π_tr = ((1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ + np.log(w_struct))
-            + opts.ϵ * w_struct)
+    x_route = ℓ.router.x + opts.τ * np.log(w_struct)
+    π_tr = ((1 - opts.ϵ) * tf.nn.softmax(x_route / opts.τ) + opts.ϵ * w_struct)
     π_ev = tf.to_float(tf.equal(
-        tf.expand_dims(tf.to_int32(tf.argmax(π_tr, 1)), 1),
+        tf.expand_dims(tf.to_int32(tf.argmax(x_route, 1)), 1),
         tf.range(len(ℓ.sinks))))
     for i, s in enumerate(ℓ.sinks):
         route_ds(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
@@ -212,10 +212,11 @@ def route_sinks_cr_dyn(ℓ, opts):
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
     w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
+    x_route = ℓ.router.x + opts.τ * np.log(w_struct)
+    π_tr = ((1 - opts.ϵ) * tf.nn.softmax(x_route / opts.τ) + opts.ϵ * w_struct)
     π_ev = tf.to_float(tf.equal(
-        tf.expand_dims(tf.to_int32(tf.argmin(ℓ.router.x, 1)), 1),
+        tf.expand_dims(tf.to_int32(tf.argmax(x_route, 1)), 1),
         tf.range(len(ℓ.sinks))))
-    π_tr = opts.ϵ * w_struct + (1 - opts.ϵ) * π_ev
     for i, s in enumerate(ℓ.sinks):
         route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
     ℓ.c_ev = (
@@ -227,9 +228,9 @@ def route_sinks_cr_dyn(ℓ, opts):
         + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
     ℓ.c_cre = (
         opts.k_cre * sum(
-            π_tr[:, i] * tf.square(
-                ℓ.router.x[:, i] - tf.stop_gradient(
-                    s.c_opt if opts.optimistic else s.c_ev))
+            tf.stop_gradient(π_tr[:, i])
+            * tf.square(x_route[:, i] + tf.stop_gradient(
+                s.c_opt if opts.optimistic else s.c_ev))
             for i, s in enumerate(ℓ.sinks)))
 
 def route_cr(ℓ, p_tr, p_ev, opts):
@@ -245,7 +246,8 @@ class CRNet(Net):
         ϕ = self.hypers = Namespace(
             k_cpt=tf.placeholder_with_default(0.0, ()),
             k_cre=tf.placeholder_with_default(0.1, ()),
-            ϵ=tf.placeholder_with_default(0.5, ()),
+            ϵ=tf.placeholder_with_default(0.1, ()),
+            τ=tf.placeholder_with_default(1.0, ()),
             λ_em=tf.placeholder_with_default(0.5, ()),
             λ_lrn=tf.placeholder_with_default(1e-3, ()),
             μ_lrn=tf.placeholder_with_default(0.9, ()))
@@ -253,11 +255,11 @@ class CRNet(Net):
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, optimistic=optimistic,
                            mode=self.mode, **vars(ϕ)))
-        c_err = sum(ℓ.p_tr * ℓ.c_err_cor for ℓ in self.layers)
-        c_cpt = sum(ℓ.p_tr * ϕ.k_cpt * ℓ.n_ops for ℓ in self.layers)
-        c_cre = sum(ℓ.p_tr * ℓ.c_cre for ℓ in self.layers)
-        c_mod = sum(ℓ.p_tr * (ℓ.c_mod + ℓ.router.c_mod) for ℓ in self.layers)
-        c_tr = c_err + c_cpt + c_cre + c_mod
+        c_err = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_err_cor for ℓ in self.layers)
+        c_cre = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_cre for ℓ in self.layers)
+        c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
+                    for ℓ in self.layers)
+        c_tr = c_err + c_cre + c_mod
         opt = tf.train.MomentumOptimizer(ϕ.λ_lrn, ϕ.μ_lrn)
         with tf.control_dependencies([ℓ.update_μ_tr for ℓ in self.layers]):
             self.train_op = minimize_expected(self, tf.reduce_mean(c_tr), opt)
