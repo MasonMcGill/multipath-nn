@@ -5,22 +5,40 @@ Sample network activity vectors.
 from json import dumps
 from os import makedirs
 
+import matplotlib.pyplot as plt
 import numpy as np
-import numpy.random as rand
 import scipy.misc as misc
+import seaborn as sns
 import sklearn.manifold as manifold
 
 from exp.dr_cifar import (
-    ReConvMax, ds_chain, read_dataset, sr_chain, tf_specs)
+    ReConvMax, batch_size, ds_chain, read_dataset, sr_chain, tf_specs)
 from lib.layer_types import unpack_pyramid
+
+################################################################################
+# Define support functions.
+################################################################################
+
+def autoscale(x):
+    return (x - np.min(x)) / (np.max(x) - np.min(x))
+
+def gamma_encode(x):
+    return x**0.45
+
+def reduce_dim(x):
+    x_flat = np.reshape(x, (-1, x.shape[2]))
+    x1_flat = manifold.MDS(n_components=3, n_init=1).fit_transform(x_flat)
+    return np.reshape(x1_flat, x.shape[:2] + (3,))
 
 ################################################################################
 # Load data.
 ################################################################################
 
 dataset = read_dataset()
+
 n_samples = 32
 n_feature_samples = 8
+
 x0 = dataset.x0_ts[:n_samples]
 y = dataset.y_ts[:n_samples]
 
@@ -29,7 +47,7 @@ y = dataset.y_ts[:n_samples]
 ################################################################################
 
 net = ds_chain()
-net.read('nets/ds-chains/net1.tfn')
+net.read('nets/ds-chains-em/net1.tfn')
 
 ################################################################################
 # Log the layer at which each sample was classified.
@@ -44,12 +62,6 @@ for i, ℓ in enumerate(net.leaves):
 ################################################################################
 # Sample image pyramids.
 ################################################################################
-
-def autoscale(x):
-    return (x - np.min(x)) / (np.max(x) - np.min(x))
-
-def gamma_encode(x):
-    return x**0.45
 
 pyr = net.eval(unpack_pyramid(net.root.comps[0].x, x0.shape[:2]), x0, y)
 pyr_lln = net.eval(unpack_pyramid(net.root.comps[1].x, x0.shape[:2]), x0, y)
@@ -68,14 +80,6 @@ for i in range(n_samples):
 # Sample feature maps.
 ################################################################################
 
-def mean_std_normalize(x):
-    return (x - np.mean(x)) / np.std(x - np.mean(x))
-
-def reduce_dim(x, n_steps=256, λ=1e-2, ϵ=1e-3):
-    x_flat = np.reshape(x, (-1, x.shape[2]))
-    x1_flat = manifold.MDS(n_components=3, n_init=1).fit_transform(x_flat)
-    return np.reshape(x1_flat, x.shape[:2] + (3,))
-
 tf_layers = [ℓ for ℓ in net.layers if isinstance(ℓ, ReConvMax)]
 
 for i, ℓ in enumerate(tf_layers):
@@ -90,3 +94,28 @@ for i, ℓ in enumerate(tf_layers):
                             gamma_encode(autoscale(x1_clipped)))
             except ValueError:
                 pass
+
+################################################################################
+# Sample error signals.
+################################################################################
+
+makedirs('signals/c_err', exist_ok=True)
+
+for i, ℓ in enumerate(net.leaves):
+    b_tr = list(dataset.training_batches(batch_size))
+    b_vl = list(dataset.test_batches(batch_size))
+    c_err_tr = np.hstack([net.eval(ℓ.c_err, x0, y) for x0, y in b_tr])
+    c_err_vl = np.hstack([net.eval(ℓ.c_err, x0, y) for x0, y in b_vl])
+    c_err_cor = np.hstack([net.eval(ℓ.c_err_cor, x0, y) for x0, y in b_tr])
+    plt.figure()
+    sns.distplot(c_err_tr, norm_hist=True); plt.tight_layout()
+    plt.savefig('signals/c_err/layer%i-tr.pdf' % i)
+    plt.close()
+    plt.figure()
+    sns.distplot(c_err_vl, norm_hist=True); plt.tight_layout()
+    plt.savefig('signals/c_err/layer%i-vl.pdf' % i)
+    plt.close()
+    plt.figure()
+    sns.distplot(c_err_cor, norm_hist=True); plt.tight_layout()
+    plt.savefig('signals/c_err/layer%i-cor.pdf' % i)
+    plt.close()
