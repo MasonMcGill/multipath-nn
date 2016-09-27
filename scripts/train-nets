@@ -80,11 +80,27 @@ def train_ds_chains():
                 net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
                 net.hypers.k_cpt: k_cpt})
 
+def train_ds_chains_em():
+    for i, k_cpt in enumerate(k_cpts):
+        with tf.Graph().as_default():
+            net = ds_chain()
+            train('nets/ds-chains-em/net%i.tfn' % i, net, True, lambda t: {
+                net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
+                net.hypers.k_cpt: k_cpt})
+
 def train_cr_chains():
     for i, k_cpt in enumerate(k_cpts):
         with tf.Graph().as_default():
             net = cr_chain()
             train('nets/cr-chains/net%i.tfn' % i, net, False, lambda t: {
+                net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
+                net.hypers.k_cpt: k_cpt})
+
+def train_cr_chains_em():
+    for i, k_cpt in enumerate(k_cpts):
+        with tf.Graph().as_default():
+            net = cr_chain()
+            train('nets/cr-chains-em/net%i.tfn' % i, net, True, lambda t: {
                 net.hypers.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
                 net.hypers.k_cpt: k_cpt})
 
@@ -107,7 +123,9 @@ def train_cr_trees():
 training_targets = {
     'sr-chains': train_sr_chains,
     'ds-chains': train_ds_chains,
+    'ds-chains-em': train_ds_chains_em,
     'cr-chains': train_cr_chains,
+    'cr-chains-em': train_cr_chains_em,
     'ds-trees': train_ds_trees,
     'cr-trees': train_cr_trees}
 
