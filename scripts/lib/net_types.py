@@ -28,7 +28,7 @@ def minimize_expected(net, cost, optimizer, router_lr_scale=1):
 def add_error_mapping(ℓ, λ, ϵ=1e-3):
     ℓ.μ_tr = tf.Variable(0.0, trainable=False)
     ℓ.μ_vl = tf.Variable(0.0, trainable=False)
-    μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.c_err) / tf.reduce_sum(ℓ.p_tr)
+    μ_batch = tf.reduce_mean(ℓ.c_err)
     ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch)
     ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch)
     ℓ.c_err_cor = tf.cond(tf.equal(ℓ.μ_vl, 0), lambda: ℓ.c_err,
