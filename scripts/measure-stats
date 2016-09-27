@@ -45,7 +45,9 @@ def acc_and_moc(net):
             **{(ℓ, 'p_cor'): p_cor(net, ℓ) for ℓ in net.leaves},
             **{(ℓ, 'p_inc'): p_inc(net, ℓ) for ℓ in net.leaves},
             **{(ℓ, 'p_cor_by_cls'): p_cor_by_cls(net, ℓ) for ℓ in net.leaves},
-            **{(ℓ, 'p_inc_by_cls'): p_inc_by_cls(net, ℓ) for ℓ in net.leaves}}
+            **{(ℓ, 'p_inc_by_cls'): p_inc_by_cls(net, ℓ) for ℓ in net.leaves},
+            **{(ℓ, 'c_err'): ℓ.c_err for ℓ in net.leaves},
+            **{(ℓ, 'c_err_cor'): ℓ.c_err_cor for ℓ in net.leaves}}
 
 ################################################################################
 # Ensure that the output directory exists.
@@ -71,6 +73,8 @@ def measure_stats(src, net_constr):
 
 measure_stats('sr-chains', lambda i: sr_chain(i))
 measure_stats('ds-chains', lambda i: ds_chain())
+measure_stats('ds-chains-em', lambda i: ds_chain())
 measure_stats('cr-chains', lambda i: cr_chain())
+measure_stats('cr-chains-em', lambda i: cr_chain())
 measure_stats('ds-trees', lambda i: ds_tree())
 measure_stats('cr-trees', lambda i: cr_tree())

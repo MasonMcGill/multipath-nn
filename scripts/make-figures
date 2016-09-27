@@ -212,3 +212,28 @@ for i in range(len(logs['ds-trees'])):
 for i in range(len(logs['cr-trees'])):
     make_tree_acc_nld('acc-nld-cr-trees-%i.pdf' % i, 'cr-trees', i)
     make_tree_cls_nld('cls-nld-cr-trees-%i.pdf' % i, 'cr-trees', i)
+
+################################################################################
+# Generate a per-layer mean error plot.
+################################################################################
+
+c_err_tr = []
+c_err_vl = []
+c_err_cor = []
+
+ℓ = logs['ds-chains-em'][1]['root']
+while len(ℓ['sinks']) > 1:
+    c_err_tr.append(ℓ['sinks'][0]['stats_tr']['c_err'])
+    c_err_vl.append(ℓ['sinks'][0]['stats_ts']['c_err'])
+    c_err_cor.append(ℓ['sinks'][0]['stats_tr']['c_err_cor'])
+    ℓ = ℓ['sinks'][1]
+
+plt.figure(figsize=(6, 4))
+plt.xlabel('Layer Index')
+plt.ylabel('Mean Cross-Entropy Error')
+plt.plot(c_err_tr, label='Training Error')
+plt.plot(c_err_vl, label='Validation Error')
+plt.plot(c_err_cor, label='Corrected Training Error')
+plt.legend()
+plt.tight_layout()
+plt.savefig('figures/mean-error.pdf')
