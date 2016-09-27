@@ -28,7 +28,7 @@ w_cls = np.transpose(np.float32([np.equal(m_cls, i) for i in range(2)]))
 conv_supp = 3
 router_n_chan = 16
 
-k_cpts = [0, 2e-9, 4e-9, 8e-9, 1.6e-8, 3.2e-8]
+k_cpts = [0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8]
 k_cre = 0.01
 k_l2 = 1e-3
 σ_w = 1e-2

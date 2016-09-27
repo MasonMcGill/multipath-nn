@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+'''
+Sample network activity vectors.
+'''
+from json import dumps
+from os import makedirs
+
+import numpy as np
+import numpy.random as rand
+import scipy.misc as misc
+import sklearn.manifold as manifold
+
+from exp.dr_cifar import (
+    ReConvMax, ds_chain, read_dataset, sr_chain, tf_specs)
+from lib.layer_types import unpack_pyramid
+
+################################################################################
+# Load data.
+################################################################################
+
+dataset = read_dataset()
+n_samples = 32
+n_feature_samples = 8
+x0 = dataset.x0_ts[:n_samples]
+y = dataset.y_ts[:n_samples]
+
+################################################################################
+# Load a network.
+################################################################################
+
+net = ds_chain()
+net.read('nets/ds-chains/net1.tfn')
+
+################################################################################
+# Log the layer at which each sample was classified.
+################################################################################
+
+makedirs('signals/p_ev', exist_ok=True)
+
+for i, ℓ in enumerate(net.leaves):
+    with open('signals/p_ev/layer%i.json' % i, 'w') as f:
+        f.write(dumps(net.eval(ℓ.p_ev, x0, y).tolist(), indent=2))
+
+################################################################################
+# Sample image pyramids.
+################################################################################
+
+def autoscale(x):
+    return (x - np.min(x)) / (np.max(x) - np.min(x))
+
+def gamma_encode(x):
+    return x**0.45
+
+pyr = net.eval(unpack_pyramid(net.root.comps[0].x, x0.shape[:2]), x0, y)
+pyr_lln = net.eval(unpack_pyramid(net.root.comps[1].x, x0.shape[:2]), x0, y)
+
+makedirs('signals/pyr', exist_ok=True)
+makedirs('signals/pyr-lln', exist_ok=True)
+
+for i in range(n_samples):
+    for j in range(len(pyr)):
+        misc.imsave('signals/pyr/sample%i-scale%i.png' % (i, j),
+                    gamma_encode(autoscale(pyr[j][i])))
+        misc.imsave('signals/pyr-lln/sample%i-scale%i.png' % (i, j),
+                    gamma_encode(autoscale(pyr_lln[j][i])))
+
+################################################################################
+# Sample feature maps.
+################################################################################
+
+def mean_std_normalize(x):
+    return (x - np.mean(x)) / np.std(x - np.mean(x))
+
+def reduce_dim(x, n_steps=256, λ=1e-2, ϵ=1e-3):
+    x_flat = np.reshape(x, (-1, x.shape[2]))
+    x1_flat = manifold.MDS(n_components=3, n_init=1).fit_transform(x_flat)
+    return np.reshape(x1_flat, x.shape[:2] + (3,))
+
+tf_layers = [ℓ for ℓ in net.layers if isinstance(ℓ, ReConvMax)]
+
+for i, ℓ in enumerate(tf_layers):
+    makedirs('signals/x%i' % (i + 1), exist_ok=True)
+    x = net.eval(unpack_pyramid(ℓ.x, tf_specs[i].shape0_out), x0, y)
+    for j in range(n_feature_samples):
+        for k in range(len(x)):
+            try:
+                x1 = reduce_dim(x[k][j])
+                x1_clipped = np.clip(x1, -3 * np.std(x1), 3 * np.std(x1))
+                misc.imsave('signals/x%i/sample%i-scale%i.png' % (i + 1, j, k),
+                            gamma_encode(autoscale(x1_clipped)))
+            except ValueError:
+                pass
