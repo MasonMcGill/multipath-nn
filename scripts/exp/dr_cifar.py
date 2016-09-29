@@ -28,7 +28,7 @@ w_cls = np.transpose(np.float32([np.equal(m_cls, i) for i in range(2)]))
 conv_supp = 3
 router_n_chan = 16
 
-k_cpts = [0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8]
+k_cpts = [0.0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8]
 k_cre = 0.01
 k_l2 = 1e-3
 σ_w = 1e-2
@@ -123,26 +123,28 @@ def sr_chain(n_tf):
     for i in reversed(range(n_tf)):
         layers = [rcm(i), layers]
     layers = [pyr(), layers]
-    return SRNet(x0_shape, y_shape, layers)
+    return SRNet(x0_shape, y_shape, {}, layers)
 
-def ds_chain():
+def ds_chain(k_cpt=0.0):
     layers = [rcm(-1), reg(-1)]
     for i in reversed(range(len(tf_specs) - 1)):
         layers = [rcm(i), reg(i), layers]
     layers = [pyr(), reg(), layers]
-    return DSNet(x0_shape, y_shape, gen_ds_router, layers)
+    return DSNet(x0_shape, y_shape, gen_ds_router,
+                 dict(k_cpt=k_cpt), layers)
 
-def cr_chain(optimistic=True):
+def cr_chain(optimistic=True, k_cpt=0.0):
     layers = [rcm(-1), reg(-1)]
     for i in reversed(range(len(tf_specs) - 1)):
         layers = [rcm(i), reg(i), layers]
     layers = [pyr(), reg(), layers]
     return CRNet(x0_shape, y_shape, gen_cr_router,
-                 optimistic, layers)
+                 optimistic, dict(k_cpt=k_cpt), layers)
 
-def ds_tree():
+def ds_tree(k_cpt=0.0):
     return DSNet(
-        x0_shape, y_shape, gen_ds_router,
+        x0_shape, y_shape,
+        gen_ds_router, dict(k_cpt=k_cpt),
         [pyr(), reg(),
             [rcm(0), reg(0),
                 [rcm(1), reg(1),
@@ -160,10 +162,10 @@ def ds_tree():
                         [rcm(3), reg(3)],
                         [rcm(3), reg(3)]]]]])
 
-def cr_tree(optimistic=True):
+def cr_tree(optimistic=True, k_cpt=0.0):
     return CRNet(
-        x0_shape, y_shape,
-        gen_cr_router, optimistic,
+        x0_shape, y_shape, gen_cr_router,
+        optimistic, dict(k_cpt=k_cpt),
         [pyr(), reg(),
             [rcm(0), reg(0),
                 [rcm(1), reg(1),

@@ -26,7 +26,7 @@ def layer_desc(ℓ, stats_tr, stats_ts):
             'stats_ts': {k: v for (t, k), v in stats_ts.items() if t == ℓ},
             'sinks': [layer_desc(s, stats_tr, stats_ts) for s in ℓ.sinks]}
 
-def net_desc(net, dataset, hypers, state={}):
+def net_desc(net, dataset, hypers={}, state={}):
     stats_tr = mean_net_state(net, state, dataset.training_batches(), hypers)
     stats_ts = mean_net_state(net, state, dataset.test_batches(), hypers)
     return {'type': type(net).__name__,

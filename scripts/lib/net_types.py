@@ -51,7 +51,12 @@ def link(layer_tree, x, y, mode):
         link(s, source.x, y, mode)
 
 class Net(metaclass=ABCMeta):
-    def __init__(self, x0_shape, y_shape, layers):
+    default_hypers = {}
+
+    def __init__(self, x0_shape, y_shape, hypers, layers):
+        self.hypers = Namespace(**{
+            k: tf.placeholder_with_default(v, ())
+            for k, v in {**type(self).default_hypers, **hypers}.items()})
         self.x0 = tf.placeholder(tf.float32, (None,) + x0_shape)
         self.y = tf.placeholder(tf.float32, (None,) + y_shape)
         self.mode = tf.placeholder_with_default('ev', ())
@@ -94,28 +99,34 @@ class Net(metaclass=ABCMeta):
         saver = tf.train.Saver(vars(self.params))
         saver.restore(self.sess, path)
 
-    def train(self, x0, y, hypers={}):
+    def train(self, x0, y, hypers):
         self.sess.run(self.train_op, {
-            self.x0: x0, self.y: y, self.mode: 'tr', **hypers})
+            self.x0: x0, self.y: y, self.mode: 'tr', **{
+                getattr(self.hypers, k): v
+                for k, v in hypers.items()}})
 
-    def validate(self, x0, y, hypers={}):
+    def validate(self, x0, y, hypers):
         self.sess.run(self.validate_op, {
-            self.x0: x0, self.y: y, **hypers})
+            self.x0: x0, self.y: y, self.mode: 'tr', **{
+                getattr(self.hypers, k): v
+                for k, v in hypers.items()}})
 
-    def eval(self, target, x0, y, hypers={}):
+    def eval(self, target, x0, y, hypers):
         return self.sess.run(target, {
-            self.x0: x0, self.y: y, **hypers})
+            self.x0: x0, self.y: y, self.mode: 'tr', **{
+                getattr(self.hypers, k): v
+                for k, v in hypers.items()}})
 
 ################################################################################
 # Statically-Routed Networks
 ################################################################################
 
 class SRNet(Net):
-    def __init__(self, x0_shape, y_shape, layers):
-        super().__init__(x0_shape, y_shape, layers)
-        ϕ = self.hypers = Namespace(
-            λ_lrn=tf.placeholder_with_default(1e-3, ()),
-            μ_lrn=tf.placeholder_with_default(0.9, ()))
+    default_hypers = dict(λ_lrn=1e-3, μ_lrn=0.9)
+
+    def __init__(self, x0_shape, y_shape, hypers, layers):
+        super().__init__(x0_shape, y_shape, hypers, layers)
+        ϕ = self.hypers
         for ℓ in self.layers:
             ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
         c_tr = sum(ℓ.c_err + ℓ.c_mod for ℓ in self.layers)
@@ -156,15 +167,13 @@ def route_ds(ℓ, p_tr, p_ev, opts):
     else: route_sinks_ds_dyn(ℓ, opts)
 
 class DSNet(Net):
-    def __init__(self, x0_shape, y_shape, router_gen, root):
-        super().__init__(x0_shape, y_shape, root)
-        ϕ = self.hypers = Namespace(
-            k_cpt=tf.placeholder_with_default(0.0, ()),
-            ϵ=tf.placeholder_with_default(0.1, ()),
-            τ=tf.placeholder_with_default(1.0, ()),
-            λ_em=tf.placeholder_with_default(0.9, ()),
-            λ_lrn=tf.placeholder_with_default(1e-3, ()),
-            μ_lrn=tf.placeholder_with_default(0.9, ()))
+    default_hypers = dict(
+        k_cpt=0.0, ϵ=0.1, τ=1.0, λ_em=0.9,
+        λ_lrn=1e-3, μ_lrn=0.9)
+
+    def __init__(self, x0_shape, y_shape, router_gen, hypers, layers):
+        super().__init__(x0_shape, y_shape, hypers, layers)
+        ϕ = self.hypers
         n_pts = tf.shape(self.x0)[0]
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, mode=self.mode, **vars(ϕ)))
@@ -242,16 +251,14 @@ def route_cr(ℓ, p_tr, p_ev, opts):
     else: route_sinks_cr_dyn(ℓ, opts)
 
 class CRNet(Net):
-    def __init__(self, x0_shape, y_shape, router_gen, optimistic, root):
-        super().__init__(x0_shape, y_shape, root)
-        ϕ = self.hypers = Namespace(
-            k_cpt=tf.placeholder_with_default(0.0, ()),
-            k_cre=tf.placeholder_with_default(0.01, ()),
-            ϵ=tf.placeholder_with_default(0.1, ()),
-            τ=tf.placeholder_with_default(1.0, ()),
-            λ_em=tf.placeholder_with_default(0.9, ()),
-            λ_lrn=tf.placeholder_with_default(1e-3, ()),
-            μ_lrn=tf.placeholder_with_default(0.9, ()))
+    default_hypers = dict(
+        k_cpt=0.0, k_cre=0.01, ϵ=0.1, τ=1.0,
+        λ_em=0.9, λ_lrn=1e-3, μ_lrn=0.9)
+
+    def __init__(self, x0_shape, y_shape, router_gen,
+                 optimistic, hypers, layers):
+        super().__init__(x0_shape, y_shape, hypers, layers)
+        ϕ = self.hypers
         n_pts = tf.shape(self.x0)[0]
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Namespace(router_gen=router_gen, optimistic=optimistic,
