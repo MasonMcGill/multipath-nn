@@ -6,6 +6,7 @@ from json import loads
 from os import listdir, makedirs
 from os.path import basename, splitext
 
+import matplotlib as mpl
 import matplotlib.patches as pch
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,7 +20,8 @@ logs = {}
 
 for log_name in listdir('stats'):
     with open('stats/' + log_name, 'r') as f:
-        logs[splitext(log_name)[0]] = loads(f.read())
+        logs[splitext(log_name)[0]] = sorted(
+            loads(f.read()), key=(lambda n: n['stats_ts']['moc']))
 
 errs = {name: [1 - net['stats_ts']['acc'] for net in log]
         for name, log in logs.items()}
@@ -40,18 +42,25 @@ def make_acc_eff_plot(dst, src):
     plt.figure(figsize=(6, 4))
     plt.xlabel('Mean Op Count')
     plt.ylabel('Error Rate')
-    for log_name, label in src:
-        plt.plot(mocs[log_name], errs[log_name], label=label)
+    for log_name, label, color in src:
+        plt.plot(mocs[log_name], errs[log_name], label=label, color=color)
     plt.ylim(0, 0.2)
     plt.legend()
     plt.tight_layout()
-    plt.savefig('figures/' + dst)
+    plt.savefig('figures/' + dst, transparent=True)
 
-make_acc_eff_plot('acc-eff.pdf', [
-    ('sr-chains', 'Static Routing'),
-    ('ds-chains', 'Decision Smoothing Chains'),
-    ('cr-chains', 'Cost Regression Chains'),
-    ('ds-trees', 'Decision Smoothing Trees')])
+make_acc_eff_plot('acc-eff-0.png', [
+    ('sr-chains', 'Static Routing', sns.color_palette()[0]),
+    ('ds-chains', 'Decision Smoothing', sns.color_palette()[1]),
+    ('cr-chains', 'Cost Regression', sns.color_palette()[2])])
+make_acc_eff_plot('acc-eff-1.png', [
+    ('sr-chains', 'Static Routing', sns.color_palette()[0]),
+    ('ds-chains', 'Decision Smoothing', sns.color_palette()[1]),
+    ('ds-chains-em', 'Decision Smoothing (with EM)', sns.color_palette()[3])])
+make_acc_eff_plot('acc-eff-2.png', [
+    ('sr-chains', 'Statically-Routed Chains', sns.color_palette()[0]),
+    ('ds-chains', 'Decision Smoothing Chains', sns.color_palette()[1]),
+    ('ds-trees', 'Decision Smoothing Trees', sns.color_palette()[5])])
 
 ################################################################################
 # Generate node-link diagrams.
@@ -123,12 +132,12 @@ def make_chain_acc_nld(dst, log_name):
     max_depth = nld_bounds(logs[log_name][0]['root'], 0, 0, 1)[1]
     for i, net in enumerate(logs[log_name]):
         draw_acc_nld(net['root'], 0, i, 1)
-    plt.arrow(0.4 * max_depth, -0.6, 0.2 * max_depth, 0, fc='#b0b0b0',
-              ec='#b0b0b0', linewidth=3, head_width=0.075)
-    plt.arrow(-0.6, 0.2 * (n_nets - 1), 0, 0.6 * (n_nets - 1), fc='#b0b0b0',
-              ec='#b0b0b0', linewidth=3, head_width=0.075)
-    plt.ylabel('Cost of Computation', fontsize='large', color='#909090')
-    plt.xlabel('Layer Index', fontsize='large', color='#909090')
+    plt.arrow(0.4 * max_depth, -0.6, 0.2 * max_depth, 0, fc='#909090',
+              ec='#909090', linewidth=3, head_width=0.075)
+    plt.arrow(-0.6, 0.2 * (n_nets - 1), 0, 0.6 * (n_nets - 1), fc='#909090',
+              ec='#909090', linewidth=3, head_width=0.075)
+    plt.ylabel('Cost of Computation', fontsize='large', color='#606060')
+    plt.xlabel('Layer Index', fontsize='large', color='#606060')
     plt.xlim(-0.7, max_depth + 0.7)
     plt.ylim(-0.7, n_nets - 0.3)
     plt.figlegend([
@@ -139,7 +148,7 @@ def make_chain_acc_nld(dst, log_name):
     plt.gca().set_aspect('equal')
     plt.gcf().set_size_inches(max_depth + 2, n_nets + 2)
     plt.tight_layout()
-    plt.savefig('figures/' + dst)
+    plt.savefig('figures/' + dst, transparent=True)
 
 def make_chain_cls_nld(dst, log_name):
     plt.figure()
@@ -147,12 +156,12 @@ def make_chain_cls_nld(dst, log_name):
     max_depth = nld_bounds(logs[log_name][0]['root'], 0, 0, 1)[1]
     for i, net in enumerate(logs[log_name]):
         draw_cls_nld(net['root'], 0, i, 1)
-    plt.arrow(0.4 * max_depth, -0.6, 0.2 * max_depth, 0, fc='#b0b0b0',
-              ec='#b0b0b0', linewidth=3, head_width=0.075)
-    plt.arrow(-0.6, 0.2 * (n_nets - 1), 0, 0.6 * (n_nets - 1), fc='#b0b0b0',
-              ec='#b0b0b0', linewidth=3, head_width=0.075)
-    plt.ylabel('Cost of Computation', fontsize='large', color='#909090')
-    plt.xlabel('Layer Index', fontsize='large', color='#909090')
+    plt.arrow(0.4 * max_depth, -0.6, 0.2 * max_depth, 0, fc='#909090',
+              ec='#909090', linewidth=3, head_width=0.075)
+    plt.arrow(-0.6, 0.2 * (n_nets - 1), 0, 0.6 * (n_nets - 1), fc='#909090',
+              ec='#909090', linewidth=3, head_width=0.075)
+    plt.ylabel('Cost of Computation', fontsize='large', color='#606060')
+    plt.xlabel('Layer Index', fontsize='large', color='#606060')
     plt.xlim(-0.7, max_depth + 0.7)
     plt.ylim(-0.7, n_nets - 0.3)
     plt.figlegend(
@@ -161,16 +170,16 @@ def make_chain_cls_nld(dst, log_name):
     plt.gca().set_aspect('equal')
     plt.gcf().set_size_inches(max_depth + 2, n_nets + 2)
     plt.tight_layout()
-    plt.savefig('figures/' + dst)
+    plt.savefig('figures/' + dst, transparent=True)
 
 def make_tree_acc_nld(dst, log_name, i):
     plt.figure()
     net = logs[log_name][i]
     draw_acc_nld(net['root'], 0, 0, 2)
     x0, x1, y0, y1 = nld_bounds(net['root'], 0, 0, 2)
-    plt.arrow(0.35 * x1, y0 - 0.33, 0.3 * x1, 0, fc='#b0b0b0',
-              ec='#b0b0b0', linewidth=3, head_width=0.075)
-    plt.xlabel('Dataflow', fontsize='large', color='#909090')
+    plt.arrow(0.35 * x1, y0 - 0.33, 0.3 * x1, 0, fc='#909090',
+              ec='#909090', linewidth=3, head_width=0.075)
+    plt.xlabel('Dataflow', fontsize='large', color='#606060')
     plt.xlim(x0 - 0.4, x1 + 0.4)
     plt.ylim(y0 - 0.4, y1 + 0.4)
     plt.figlegend([
@@ -181,16 +190,16 @@ def make_tree_acc_nld(dst, log_name, i):
     plt.gca().set_aspect('equal')
     plt.gcf().set_size_inches(x1 - x0 + 2, y1 - y0 + 2)
     plt.tight_layout()
-    plt.savefig('figures/' + dst)
+    plt.savefig('figures/' + dst, transparent=True)
 
 def make_tree_cls_nld(dst, log_name, i):
     plt.figure()
     net = logs[log_name][i]
     draw_cls_nld(net['root'], 0, 0, 2)
     x0, x1, y0, y1 = nld_bounds(net['root'], 0, 0, 2)
-    plt.arrow(0.35 * x1, y0 - 0.33, 0.3 * x1, 0, fc='#b0b0b0',
-              ec='#b0b0b0', linewidth=3, head_width=0.075)
-    plt.xlabel('Dataflow', fontsize='large', color='#909090')
+    plt.arrow(0.35 * x1, y0 - 0.33, 0.3 * x1, 0, fc='#909090',
+              ec='#909090', linewidth=3, head_width=0.075)
+    plt.xlabel('Dataflow', fontsize='large', color='#606060')
     plt.xlim(x0 - 0.4, x1 + 0.4)
     plt.ylim(y0 - 0.4, y1 + 0.4)
     plt.figlegend(
@@ -199,19 +208,19 @@ def make_tree_cls_nld(dst, log_name, i):
     plt.gca().set_aspect('equal')
     plt.gcf().set_size_inches(x1 - x0 + 2, y1 - y0 + 2)
     plt.tight_layout()
-    plt.savefig('figures/' + dst)
+    plt.savefig('figures/' + dst, transparent=True)
 
-make_chain_acc_nld('acc-nld-ds-chains.pdf', 'ds-chains')
-make_chain_acc_nld('acc-nld-cr-chains.pdf', 'cr-chains')
-make_chain_cls_nld('cls-nld-ds-chains.pdf', 'ds-chains')
-make_chain_cls_nld('cls-nld-cr-chains.pdf', 'cr-chains')
+make_chain_acc_nld('acc-nld-ds-chains.png', 'ds-chains')
+make_chain_acc_nld('acc-nld-cr-chains.png', 'cr-chains')
+make_chain_cls_nld('cls-nld-ds-chains.png', 'ds-chains')
+make_chain_cls_nld('cls-nld-cr-chains.png', 'cr-chains')
 
 for i in range(len(logs['ds-trees'])):
-    make_tree_acc_nld('acc-nld-ds-trees-%i.pdf' % i, 'ds-trees', i)
-    make_tree_cls_nld('cls-nld-ds-trees-%i.pdf' % i, 'ds-trees', i)
+    make_tree_acc_nld('acc-nld-ds-trees-%i.png' % i, 'ds-trees', i)
+    make_tree_cls_nld('cls-nld-ds-trees-%i.png' % i, 'ds-trees', i)
 for i in range(len(logs['cr-trees'])):
-    make_tree_acc_nld('acc-nld-cr-trees-%i.pdf' % i, 'cr-trees', i)
-    make_tree_cls_nld('cls-nld-cr-trees-%i.pdf' % i, 'cr-trees', i)
+    make_tree_acc_nld('acc-nld-cr-trees-%i.png' % i, 'cr-trees', i)
+    make_tree_cls_nld('cls-nld-cr-trees-%i.png' % i, 'cr-trees', i)
 
 ################################################################################
 # Generate a per-layer mean error plot.
@@ -233,7 +242,32 @@ plt.xlabel('Layer Index')
 plt.ylabel('Mean Cross-Entropy Error')
 plt.plot(c_err_tr, label='Training Error')
 plt.plot(c_err_vl, label='Validation Error')
-plt.plot(c_err_cor, label='Corrected Training Error')
+plt.plot(c_err_cor, label='Corrected Training Error',
+         color=sns.color_palette()[5])
 plt.legend()
 plt.tight_layout()
-plt.savefig('figures/mean-error.pdf')
+plt.savefig('figures/mean-error.png', transparent=True)
+
+################################################################################
+# Generate error mapping cartoons.
+################################################################################
+
+def make_em_cartoon(i, α):
+    plt.figure(figsize=(2, 2))
+    plt.xkcd()
+    mpl.rcParams['path.effects'] = []
+    plt.plot(np.linspace(0, 2), α * np.exp(-np.linspace(0, 2)))
+    plt.gca().spines['right'].set_color('none')
+    plt.gca().spines['top'].set_color('none')
+    plt.gca().spines['bottom'].set_color('#404040')
+    plt.gca().spines['left'].set_color('#404040')
+    plt.xticks([]); plt.yticks([])
+    plt.ylim(0, 1); plt.tight_layout()
+    plt.savefig('figures/em-cartoon-%i.png' % i, transparent=True)
+    plt.close()
+
+make_em_cartoon(0, 1)
+make_em_cartoon(1, 0.4)
+make_em_cartoon(2, 0.5)
+make_em_cartoon(3, 0.1)
+make_em_cartoon(4, 0.4)
