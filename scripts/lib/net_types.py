@@ -25,14 +25,13 @@ def minimize_expected(net, cost, optimizer, router_lr_scale=1):
 # Error Mapping
 ################################################################################
 
-def add_error_mapping(ℓ, λ, ϵ=1e-3):
+def add_error_mapping(ℓ, λ):
     ℓ.μ_tr = tf.Variable(0.0, trainable=False)
     ℓ.μ_vl = tf.Variable(0.0, trainable=False)
     μ_batch = tf.reduce_mean(ℓ.c_err)
     ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch)
     ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch)
-    ℓ.c_err_cor = tf.cond(tf.equal(ℓ.μ_vl, 0), lambda: ℓ.c_err,
-                          lambda: (ℓ.μ_vl + ϵ) / (ℓ.μ_tr + ϵ) * ℓ.c_err)
+    ℓ.c_err_cor = ℓ.c_err - ℓ.μ_tr + ℓ.μ_vl
 
 ################################################################################
 # Root Network Class
