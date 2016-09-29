@@ -47,7 +47,8 @@ def acc_and_moc(net):
             **{(ℓ, 'p_cor_by_cls'): p_cor_by_cls(net, ℓ) for ℓ in net.leaves},
             **{(ℓ, 'p_inc_by_cls'): p_inc_by_cls(net, ℓ) for ℓ in net.leaves},
             **{(ℓ, 'c_err'): ℓ.c_err for ℓ in net.leaves},
-            **{(ℓ, 'c_err_cor'): ℓ.c_err_cor for ℓ in net.leaves}}
+            **{(ℓ, 'c_err_cor'): ℓ.c_err_cor for ℓ in net.leaves
+               if hasattr(ℓ, 'c_err_cor')}}
 
 ################################################################################
 # Ensure that the output directory exists.
