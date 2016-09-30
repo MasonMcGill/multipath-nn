@@ -11,15 +11,9 @@ import numpy as np
 import tensorflow as tf
 
 from exp.dr_cifar import (
-    batch_size, exp_specs, logging_period, n_epochs,
-    read_dataset, t_anneal, w_cls, λ_lrn_0)
+    batch_size, exp_specs, logging_period,
+    n_epochs, t_anneal, w_cls, λ_lrn_0)
 from lib.desc import net_desc, render_net_desc
-
-################################################################################
-# Load the dataset.
-################################################################################
-
-dataset = read_dataset()
 
 ################################################################################
 # Define network statistics.
@@ -45,7 +39,7 @@ def acc_and_moc(net):
 # Define a training function.
 ################################################################################
 
-def train(dst, net, validate):
+def train(dst, dataset, net):
     net_state = acc_and_moc(net)
     for t in range(n_epochs):
         set_tr = [('tr', b) for b in dataset.training_batches(batch_size)]
@@ -53,7 +47,7 @@ def train(dst, net, validate):
         batches = set_tr + set_vl
         shuffle(batches)
         for mode, (x0, y) in batches:
-            op = net.validate if validate and mode == 'vl' else net.train
+            op = net.validate if mode == 'vl' else net.train
             op(x0, y, {'λ_lrn': λ_lrn_0 / 2**(t / t_anneal)})
         if (t + 1) % logging_period == 0:
             print(render_net_desc(
@@ -76,6 +70,7 @@ args = parser.parse_args()
 # Train networks.
 ################################################################################
 
-for i, (net_constr, validate) in enumerate(exp_specs[args.target]):
+dataset = exp_specs[args.target].dataset()
+for i, net_constr in enumerate(exp_specs[args.target].nets):
     with tf.Graph().as_default():
-        train('nets/%s/%i' % (args.target, i), net_constr(), validate)
+        train('nets/%s/%i' % (args.target, i), dataset, net_constr())

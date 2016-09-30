@@ -10,7 +10,7 @@ from os.path import isfile
 import tensorflow as tf
 
 from lib.desc import net_desc
-from exp.dr_cifar import exp_specs, read_dataset, w_cls
+from exp.dr_cifar import exp_specs, w_cls
 
 ################################################################################
 # Define network statistics.
@@ -63,9 +63,10 @@ dataset = read_dataset()
 # Train networks.
 ################################################################################
 
+dataset = exp_specs[args.target].dataset()
 log = []
 
-for i, (net_constr, validate) in enumerate(exp_specs[args.target]):
+for i, net_constr in enumerate(exp_specs[args.target].nets):
     if isfile('nets/%s/net%i.tfn' % (args.target, i)):
         with tf.Graph().as_default():
             net = net_constr()

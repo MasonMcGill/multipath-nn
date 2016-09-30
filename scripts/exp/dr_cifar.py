@@ -123,26 +123,26 @@ def sr_chain(n_tf):
     for i in reversed(range(n_tf)):
         layers = [rcm(i), layers]
     layers = [pyr(), layers]
-    return SRNet(x0_shape, y_shape, {}, layers)
+    return lambda: SRNet(x0_shape, y_shape, {}, layers)
 
 def ds_chain(k_cpt=0.0):
     layers = [rcm(-1), reg(-1)]
     for i in reversed(range(len(tf_specs) - 1)):
         layers = [rcm(i), reg(i), layers]
     layers = [pyr(), reg(), layers]
-    return DSNet(x0_shape, y_shape, gen_ds_router,
-                 dict(k_cpt=k_cpt), layers)
+    return lambda: DSNet(x0_shape, y_shape, gen_ds_router,
+                         dict(k_cpt=k_cpt), layers)
 
 def cr_chain(k_cpt=0.0, optimistic=True):
     layers = [rcm(-1), reg(-1)]
     for i in reversed(range(len(tf_specs) - 1)):
         layers = [rcm(i), reg(i), layers]
     layers = [pyr(), reg(), layers]
-    return CRNet(x0_shape, y_shape, gen_cr_router,
-                 optimistic, dict(k_cpt=k_cpt), layers)
+    return lambda: CRNet(x0_shape, y_shape, gen_cr_router,
+                         optimistic, dict(k_cpt=k_cpt), layers)
 
 def ds_tree(k_cpt=0.0):
-    return DSNet(
+    return lambda: DSNet(
         x0_shape, y_shape,
         gen_ds_router, dict(k_cpt=k_cpt),
         [pyr(), reg(),
@@ -163,7 +163,7 @@ def ds_tree(k_cpt=0.0):
                         [rcm(3), reg(3)]]]]])
 
 def cr_tree(k_cpt=0.0, optimistic=True):
-    return CRNet(
+    return lambda: CRNet(
         x0_shape, y_shape, gen_cr_router,
         optimistic, dict(k_cpt=k_cpt),
         [pyr(), reg(),
@@ -189,27 +189,27 @@ def cr_tree(k_cpt=0.0, optimistic=True):
 
 ExpSpec = namedtuple(
     'ExperimentSpec',
-    'net_constr do_em')
+    'dataset nets')
 
 exp_specs = {
-    'sr-chains': [
-        ExpSpec(lambda: sr_chain(n_tf), False)
-        for n_tf in range(len(tf_specs) + 1)],
-    'ds-chains': [
-        ExpSpec(lambda: ds_chain(k_cpt), False)
-        for k_cpt in k_cpts],
-    'cr-chains': [
-        ExpSpec(lambda: cr_chain(k_cpt), False)
-        for k_cpt in k_cpts],
-    'ds-chains-em': [
-        ExpSpec(lambda: ds_chain(k_cpt), True)
-        for k_cpt in k_cpts],
-    'cr-chains-em': [
-        ExpSpec(lambda: cr_chain(k_cpt), True)
-        for k_cpt in k_cpts],
-    'ds-trees': [
-        ExpSpec(lambda: ds_tree(k_cpt), False)
-        for k_cpt in k_cpts],
-    'cr-trees': [
-        ExpSpec(lambda: cr_tree(k_cpt), False)
-        for k_cpt in k_cpts]}
+    'sr-chains': ExpSpec(
+        lambda: Dataset('data/cifar-10.mat'),
+        list(map(sr_chain, range(len(tf_specs) + 1)))),
+    'ds-chains': ExpSpec(
+        lambda: Dataset('data/cifar-10.mat'),
+        list(map(ds_chain, k_cpts))),
+    'cr-chains': ExpSpec(
+        lambda: Dataset('data/cifar-10.mat'),
+        list(map(cr_chain, k_cpts))),
+    'ds-chains-em': ExpSpec(
+        lambda: Dataset('data/cifar-10.mat', n_vl=1280),
+        list(map(ds_chain, k_cpts))),
+    'cr-chains-em': ExpSpec(
+        lambda: Dataset('data/cifar-10.mat', n_vl=1280),
+        list(map(cr_chain, k_cpts))),
+    'ds-trees': ExpSpec(
+        lambda: Dataset('data/cifar-10.mat'),
+        list(map(ds_tree, k_cpts))),
+    'cr-trees': ExpSpec(
+        lambda: Dataset('data/cifar-10.mat'),
+        list(map(cr_tree, k_cpts)))}
