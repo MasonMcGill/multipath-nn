@@ -7,7 +7,6 @@ from json import dumps
 from os import makedirs
 from os.path import isfile
 
-import numpy as np
 import tensorflow as tf
 
 from lib.desc import net_desc
