@@ -2,6 +2,7 @@
 '''
 Measure network performance statistics.
 '''
+from argparse import ArgumentParser
 from json import dumps
 from os import makedirs
 from os.path import isfile
@@ -10,14 +11,7 @@ import numpy as np
 import tensorflow as tf
 
 from lib.desc import net_desc
-from exp.dr_cifar import (
-    cr_chain, cr_tree, ds_chain, ds_tree, read_dataset, sr_chain, w_cls)
-
-################################################################################
-# Load data.
-################################################################################
-
-dataset = read_dataset()
+from exp.dr_cifar import exp_specs, read_dataset, w_cls
 
 ################################################################################
 # Define network statistics.
@@ -51,31 +45,34 @@ def acc_and_moc(net):
                if hasattr(ℓ, 'c_err_cor')}}
 
 ################################################################################
-# Ensure that the output directory exists.
+# Parse command-line arguments.
 ################################################################################
+
+parser = ArgumentParser(description=__doc__)
+parser.add_argument('target', help='the network type to analyze',
+                    choices=exp_specs.keys())
+
+args = parser.parse_args()
+
+################################################################################
+# Load data.
+################################################################################
+
+dataset = read_dataset()
+
+################################################################################
+# Train networks.
+################################################################################
+
+log = []
+
+for i, (net_constr, validate) in enumerate(exp_specs[args.target]):
+    if isfile('nets/%s/net%i.tfn' % (args.target, i)):
+        with tf.Graph().as_default():
+            net = net_constr()
+            net.read('nets/%s/net%i.tfn' % (args.target, i))
+            log.append(net_desc(net, dataset, {}, acc_and_moc(net)))
 
 makedirs('stats', exist_ok=True)
-
-################################################################################
-# Measure the statistics of all trained nets.
-################################################################################
-
-def measure_stats(src, net_constr):
-    log = []
-    i = 0
-    while isfile('nets/%s/net%i.tfn' % (src, i)):
-        with tf.Graph().as_default():
-            net = net_constr(i)
-            net.read('nets/%s/net%i.tfn' % (src, i))
-            log.append(net_desc(net, dataset, {}, acc_and_moc(net)))
-        i += 1
-    with open('stats/%s.json' % src, 'w') as f:
-        f.write(dumps(log, indent=2))
-
-measure_stats('sr-chains', lambda i: sr_chain(i))
-measure_stats('ds-chains', lambda i: ds_chain())
-measure_stats('ds-chains-em', lambda i: ds_chain())
-measure_stats('cr-chains', lambda i: cr_chain())
-measure_stats('cr-chains-em', lambda i: cr_chain())
-measure_stats('ds-trees', lambda i: ds_tree())
-measure_stats('cr-trees', lambda i: cr_tree())
+with open('stats/%s.json' % src, 'w') as f:
+    f.write(dumps(log, indent=2))
