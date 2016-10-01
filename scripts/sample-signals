@@ -11,8 +11,7 @@ import scipy.misc as misc
 import seaborn as sns
 import sklearn.manifold as manifold
 
-from exp.dr_cifar import (
-    ReConvMax, batch_size, ds_chain, read_dataset, sr_chain, tf_specs)
+from exp.dr_cifar import ReConvMax, batch_size, exp_specs, tf_specs
 from lib.layer_types import unpack_pyramid
 
 ################################################################################
@@ -34,7 +33,7 @@ def reduce_dim(x):
 # Load data.
 ################################################################################
 
-dataset = read_dataset()
+dataset = exp_specs['ds-chains-em'].dataset()
 
 n_samples = 32
 n_feature_samples = 8
@@ -46,7 +45,7 @@ y = dataset.y_ts[:n_samples]
 # Load a network.
 ################################################################################
 
-net = ds_chain()
+net = exp_specs['ds-chains-em'].nets[1]()
 net.read('nets/ds-chains-em/net1.tfn')
 
 ################################################################################
