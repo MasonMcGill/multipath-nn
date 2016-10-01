@@ -103,45 +103,6 @@ io.savemat('data/cifar-10.mat', cifar10_b, do_compression=True)
 print(80 * '\b \b' + 'Reformatting CIFAR-10 — done!')
 
 ################################################################################
-# Download CIFAR-100.
-################################################################################
-
-def log_cifar100_progress(i, chunk_size, file_size):
-    print('\rDownloading CIFAR-100 — %.2f%% complete.'
-          % (100 * i * chunk_size / file_size), end='', flush=True)
-
-cifar100_url = 'https://www.cs.toronto.edu/~kriz/cifar-100-matlab.tar.gz'
-cifar100_dir = TemporaryDirectory()
-cifar100_path = cifar100_dir.name
-
-urlretrieve(cifar100_url, join(cifar100_path, '_cifar100.tar.gz'),
-            log_cifar100_progress)
-print(80 * '\b \b' + 'Downloading CIFAR-100 — done!')
-
-################################################################################
-# Reformat and Gamma-Decode CIFAR-100.
-################################################################################
-
-print('Reformatting CIFAR-100...', end='', flush=True)
-unpack_archive(join(cifar100_path, '_cifar100.tar.gz'), cifar100_path)
-
-cifar100_a_tr = io.loadmat(join(cifar100_path, 'cifar-100-matlab/train.mat'))
-cifar100_a_ts = io.loadmat(join(cifar100_path, 'cifar-100-matlab/test.mat'))
-cifar100_b = {
-    'x0_tr': np.float32(np.transpose(
-        np.reshape(cifar100_a_tr['data']**2.2, (-1, 3, 32, 32)),
-        (0, 2, 3, 1)) / 255**2.2),
-    'x0_ts': np.float32(np.transpose(
-        np.reshape(cifar100_a_ts['data']**2.2, (-1, 3, 32, 32)),
-        (0, 2, 3, 1)) / 255**2.2),
-    'y_tr': np.float32(cifar100_a_tr['fine_labels'] == np.arange(100)),
-    'y_ts': np.float32(cifar100_a_ts['fine_labels'] == np.arange(100))}
-
-makedirs('data/', exist_ok=True)
-io.savemat('data/cifar-100.mat', cifar100_b, do_compression=True)
-print(80 * '\b \b' + 'Reformatting CIFAR-100 — done!')
-
-################################################################################
 # Combine MNIST and CIFAR-10.
 ################################################################################
 
