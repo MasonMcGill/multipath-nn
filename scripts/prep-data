@@ -9,7 +9,9 @@ from tempfile import TemporaryDirectory
 from urllib.request import urlretrieve
 
 import numpy as np
+import numpy.random as rand
 import scipy.io as io
+import scipy.misc as misc
 
 ################################################################################
 # Download MNIST.
@@ -138,3 +140,43 @@ cifar100_b = {
 makedirs('data/', exist_ok=True)
 io.savemat('data/cifar-100.mat', cifar100_b, do_compression=True)
 print(80 * '\b \b' + 'Reformatting CIFAR-100 — done!')
+
+################################################################################
+# Combine MNIST and CIFAR-10.
+################################################################################
+
+def resize(x, h, w):
+    return np.array([
+        misc.imresize(x_i[:, :, 0], (h, w), mode='F')[:, :, None]
+        for x_i in x])
+
+def recolor(x, d_min=0.3):
+    x_tf = []
+    for x_i in x:
+        c0 = rand.rand(3)
+        c1 = rand.rand(3)
+        while np.sqrt(np.sum(np.square(c1 - c0))) < d_min:
+            c1 = rand.rand(3)
+        x_tf.append(c0 + (c1 - c0) * x_i)
+    return np.array(x_tf)
+
+rand.seed(0)
+print('Combining MNIST and CIFAR-10...', end='', flush=True)
+
+hybrid = {
+    'x0_tr': np.vstack([
+        cifar10_b['x0_tr'],
+        recolor(resize(mnist_b['x0_tr'], 32, 32))]),
+    'x0_ts': np.vstack([
+        cifar10_b['x0_ts'],
+        recolor(resize(mnist_b['x0_ts'], 32, 32))]),
+    'y_tr': np.vstack([
+        np.hstack([cifar10_b['y_tr'], np.zeros_like(cifar10_b['y_tr'])]),
+        np.hstack([np.zeros_like(mnist_b['y_tr']), mnist_b['y_tr']])]),
+    'y_ts': np.vstack([
+        np.hstack([cifar10_b['y_ts'], np.zeros_like(cifar10_b['y_ts'])]),
+        np.hstack([np.zeros_like(mnist_b['y_ts']), mnist_b['y_ts']])])}
+
+makedirs('data/', exist_ok=True)
+io.savemat('data/hybrid.mat', hybrid, do_compression=True)
+print(80 * '\b \b' + 'Combining MNIST and CIFAR-10 — done!')
