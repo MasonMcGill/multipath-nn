@@ -229,6 +229,8 @@ class SquaredError(Layer):
     def link(self, x, y, mode):
         super().link(x, y, mode)
         self.c_err = tf.reduce_sum(tf.square(x - y), 1)
+        self.δ_cor = tf.to_float(tf.equal(
+            tf.argmax(self.x, 1), tf.argmax(y, 1)))
 
 class CrossEntropyError(Layer):
     default_hypers = dict(ϵ=1e-6)
@@ -239,6 +241,8 @@ class CrossEntropyError(Layer):
         n_cls = y.get_shape()[1].value
         p_cls = ϕ.ϵ / n_cls + (1 - ϕ.ϵ) * x
         self.c_err = -tf.reduce_sum(y * tf.log(p_cls), 1)
+        self.δ_cor = tf.to_float(tf.equal(
+            tf.argmax(self.x, 1), tf.argmax(y, 1)))
 
 class SuperclassCrossEntropyError(Layer):
     default_hypers = dict(w_cls=None, ϵ=1e-6)
@@ -250,6 +254,8 @@ class SuperclassCrossEntropyError(Layer):
         n_cls = y_sup.get_shape()[1].value
         p_cls = ϕ.ϵ / n_cls + (1 - ϕ.ϵ) * x
         self.c_err = -tf.reduce_sum(y_sup * tf.log(p_cls), 1)
+        self.δ_cor = tf.to_float(tf.equal(
+            tf.argmax(self.x, 1), tf.argmax(y_sup, 1)))
 
 ################################################################################
 # Compound Layers
@@ -273,3 +279,5 @@ class Chain(Layer):
             ('layer%i_%s' % (i, k)): v
             for i, ℓ in enumerate(self.comps)
             for k, v in vars(ℓ.params).items()})
+        if hasattr(self.comps[-1], 'δ_cor'):
+            self.δ_cor = self.comps[-1].δ_cor

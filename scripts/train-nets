@@ -12,35 +12,25 @@ import tensorflow as tf
 
 from exp.dr_cifar import (
     batch_size, exp_specs, logging_period,
-    n_epochs, t_anneal, w_cls, λ_lrn_0)
+    n_epochs, t_anneal, λ_lrn_0)
 from lib.desc import net_desc, render_net_desc
 
 ################################################################################
 # Define network statistics.
 ################################################################################
 
-def p_cor(net, ℓ):
-    y_sup = tf.matmul(net.y, w_cls)
-    δ_cor = tf.equal(tf.argmax(ℓ.x, 1), tf.argmax(y_sup, 1))
-    return ℓ.p_ev * tf.to_float(δ_cor)
-
-def p_inc(net, ℓ):
-    y_sup = tf.matmul(net.y, w_cls)
-    δ_inc = tf.not_equal(tf.argmax(ℓ.x, 1), tf.argmax(y_sup, 1))
-    return ℓ.p_ev * tf.to_float(δ_inc)
-
-def acc_and_moc(net):
-    return {(net, 'acc'): sum(p_cor(net, ℓ) for ℓ in net.leaves),
+def state_tensors(net):
+    return {(net, 'acc'): sum(ℓ.p_ev * ℓ.δ_cor for ℓ in net.leaves),
             (net, 'moc'): sum(ℓ.p_ev * ℓ.n_ops for ℓ in net.layers),
-            **{(ℓ, 'p_cor'): p_cor(net, ℓ) for ℓ in net.leaves},
-            **{(ℓ, 'p_inc'): p_inc(net, ℓ) for ℓ in net.leaves}}
+            **{(ℓ, 'p_cor'): ℓ.p_ev * ℓ.δ_cor for ℓ in net.leaves},
+            **{(ℓ, 'p_inc'): ℓ.p_ev * (1 - ℓ.δ_cor) for ℓ in net.leaves}}
 
 ################################################################################
 # Define a training function.
 ################################################################################
 
 def train(dst, dataset, net):
-    net_state = acc_and_moc(net)
+    net_state = state_tensors(net)
     for t in range(n_epochs):
         set_tr = [('tr', b) for b in dataset.training_batches(batch_size)]
         set_vl = [('vl', b) for b in dataset.validation_batches(batch_size)]

@@ -10,33 +10,23 @@ from os.path import isfile
 import tensorflow as tf
 
 from lib.desc import net_desc
-from exp.dr_cifar import exp_specs, w_cls
+from exp.dr_cifar import exp_specs
 
 ################################################################################
 # Define network statistics.
 ################################################################################
 
-def p_cor(net, ℓ):
-    y_sup = tf.matmul(net.y, w_cls)
-    δ_cor = tf.equal(tf.argmax(ℓ.x, 1), tf.argmax(y_sup, 1))
-    return ℓ.p_ev * tf.to_float(δ_cor)
-
-def p_inc(net, ℓ):
-    y_sup = tf.matmul(net.y, w_cls)
-    δ_inc = tf.not_equal(tf.argmax(ℓ.x, 1), tf.argmax(y_sup, 1))
-    return ℓ.p_ev * tf.to_float(δ_inc)
-
 def p_cor_by_cls(net, ℓ):
-    return tf.expand_dims(p_cor(net, ℓ), 1) * net.y
+    return tf.expand_dims(ℓ.p_ev * ℓ.δ_cor, 1) * net.y
 
 def p_inc_by_cls(net, ℓ):
-    return tf.expand_dims(p_inc(net, ℓ), 1) * net.y
+    return tf.expand_dims(ℓ.p_ev * (1 - ℓ.δ_cor), 1) * net.y
 
-def acc_and_moc(net):
-    return {(net, 'acc'): sum(p_cor(net, ℓ) for ℓ in net.leaves),
+def state_tensors(net):
+    return {(net, 'acc'): sum(ℓ.p_ev * ℓ.δ_cor for ℓ in net.leaves),
             (net, 'moc'): sum(ℓ.p_ev * ℓ.n_ops for ℓ in net.layers),
-            **{(ℓ, 'p_cor'): p_cor(net, ℓ) for ℓ in net.leaves},
-            **{(ℓ, 'p_inc'): p_inc(net, ℓ) for ℓ in net.leaves},
+            **{(ℓ, 'p_cor'): ℓ.p_ev * ℓ.δ_cor for ℓ in net.leaves},
+            **{(ℓ, 'p_inc'): ℓ.p_ev * (1 - ℓ.δ_cor) for ℓ in net.leaves},
             **{(ℓ, 'p_cor_by_cls'): p_cor_by_cls(net, ℓ) for ℓ in net.leaves},
             **{(ℓ, 'p_inc_by_cls'): p_inc_by_cls(net, ℓ) for ℓ in net.leaves},
             **{(ℓ, 'c_err'): ℓ.c_err for ℓ in net.leaves},
@@ -71,7 +61,7 @@ for i, net_constr in enumerate(exp_specs[args.target].nets):
         with tf.Graph().as_default():
             net = net_constr()
             net.read('nets/%s/net%i.tfn' % (args.target, i))
-            log.append(net_desc(net, dataset, {}, acc_and_moc(net)))
+            log.append(net_desc(net, dataset, {}, state_tensors(net)))
 
 makedirs('stats', exist_ok=True)
 with open('stats/%s.json' % src, 'w') as f:
