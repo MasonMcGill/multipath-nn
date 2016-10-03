@@ -9,22 +9,10 @@ from lib.layer_types import (
 from lib.net_types import CRNet, DSNet, SRNet
 
 ################################################################################
-# Dataset and  Subclass -> Superclass Mappings
-################################################################################
-
-def read_dataset():
-    return Dataset('data/cifar-10.mat', n_vl=1280)
-
-x0_shape = (32, 32, 3)
-y_shape = (10,)
-
-m_cls = [0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
-w_cls = np.transpose(np.float32([np.equal(m_cls, i) for i in range(2)]))
-
-################################################################################
 # Network Hyperparameters
 ################################################################################
 
+x0_shape = (32, 32, 3)
 conv_supp = 3
 router_n_chan = 16
 
@@ -83,7 +71,7 @@ class ReConvMax(Chain):
             BatchNorm(), Rect())
 
 class LogReg(Chain):
-    def __init__(self, shape0):
+    def __init__(self, shape0, w_cls):
         super().__init__(
             SelectPyramidTop(shape=tf_specs[-1][-1]),
             LinTrans(n_chan=w_cls.shape[1], k_l2=k_l2, σ_w=σ_w),
@@ -108,8 +96,9 @@ def gen_cr_router(ℓ):
 def pyr():
     return ToPyramidLLN(*tf_specs[0][:2])
 
-def reg(i=None):
-    return LogReg(tf_specs[0][0]) if i is None else LogReg(tf_specs[i][3])
+def reg(w_cls, i=None):
+    return (LogReg(tf_specs[0][0], w_cls) if i is None
+            else LogReg(tf_specs[i][3], w_cls))
 
 def rcm(i):
     return ReConvMax(*tf_specs[i][:3])
@@ -118,74 +107,82 @@ def rcm(i):
 # Network Constructors
 ################################################################################
 
-def sr_chain(n_tf):
-    layers = reg(n_tf - 1),
+def sr_chain(w_cls, n_tf):
+    layers = reg(w_cls, n_tf - 1),
     for i in reversed(range(n_tf)):
         layers = [rcm(i), layers]
     layers = [pyr(), layers]
-    return lambda: SRNet(x0_shape, y_shape, {}, layers)
+    return lambda: SRNet(x0_shape, w_cls.shape[:1], {}, layers)
 
-def ds_chain(k_cpt=0.0):
-    layers = [rcm(-1), reg(-1)]
+def ds_chain(w_cls, k_cpt=0.0):
+    layers = [rcm(-1), reg(w_cls, -1)]
     for i in reversed(range(len(tf_specs) - 1)):
-        layers = [rcm(i), reg(i), layers]
-    layers = [pyr(), reg(), layers]
-    return lambda: DSNet(x0_shape, y_shape, gen_ds_router,
+        layers = [rcm(i), reg(w_cls, i), layers]
+    layers = [pyr(), reg(w_cls), layers]
+    return lambda: DSNet(x0_shape, w_cls.shape[:1], gen_ds_router,
                          dict(k_cpt=k_cpt), layers)
 
-def cr_chain(k_cpt=0.0, optimistic=True):
-    layers = [rcm(-1), reg(-1)]
+def cr_chain(w_cls, k_cpt=0.0, optimistic=True):
+    layers = [rcm(-1), reg(w_cls, -1)]
     for i in reversed(range(len(tf_specs) - 1)):
-        layers = [rcm(i), reg(i), layers]
-    layers = [pyr(), reg(), layers]
-    return lambda: CRNet(x0_shape, y_shape, gen_cr_router,
+        layers = [rcm(i), reg(w_cls, i), layers]
+    layers = [pyr(), reg(w_cls), layers]
+    return lambda: CRNet(x0_shape, w_cls.shape[:1], gen_cr_router,
                          optimistic, dict(k_cpt=k_cpt), layers)
 
-def ds_tree(k_cpt=0.0):
+def ds_tree(w_cls, k_cpt=0.0):
     return lambda: DSNet(
-        x0_shape, y_shape,
+        x0_shape, w_cls.shape[:1],
         gen_ds_router, dict(k_cpt=k_cpt),
-        [pyr(), reg(),
-            [rcm(0), reg(0),
-                [rcm(1), reg(1),
-                    [rcm(2), reg(2),
-                        [rcm(3), reg(3)],
-                        [rcm(3), reg(3)]],
-                    [rcm(2), reg(2),
-                        [rcm(3), reg(3)],
-                        [rcm(3), reg(3)]]],
-                [rcm(1), reg(1),
-                    [rcm(2), reg(2),
-                        [rcm(3), reg(3)],
-                        [rcm(3), reg(3)]],
-                    [rcm(2), reg(2),
-                        [rcm(3), reg(3)],
-                        [rcm(3), reg(3)]]]]])
+        [pyr(), reg(w_cls),
+            [rcm(0), reg(w_cls, 0),
+                [rcm(1), reg(w_cls, 1),
+                    [rcm(2), reg(w_cls, 2),
+                        [rcm(3), reg(w_cls, 3)],
+                        [rcm(3), reg(w_cls, 3)]],
+                    [rcm(2), reg(w_cls, 2),
+                        [rcm(3), reg(w_cls, 3)],
+                        [rcm(3), reg(w_cls, 3)]]],
+                [rcm(1), reg(w_cls, 1),
+                    [rcm(2), reg(w_cls, 2),
+                        [rcm(3), reg(w_cls, 3)],
+                        [rcm(3), reg(w_cls, 3)]],
+                    [rcm(2), reg(w_cls, 2),
+                        [rcm(3), reg(w_cls, 3)],
+                        [rcm(3), reg(w_cls, 3)]]]]])
 
-def cr_tree(k_cpt=0.0, optimistic=True):
+def cr_tree(w_cls, k_cpt=0.0, optimistic=True):
     return lambda: CRNet(
-        x0_shape, y_shape, gen_cr_router,
+        x0_shape, w_cls.shape[:1], gen_cr_router,
         optimistic, dict(k_cpt=k_cpt),
-        [pyr(), reg(),
-            [rcm(0), reg(0),
-                [rcm(1), reg(1),
-                    [rcm(2), reg(2),
-                        [rcm(3), reg(3)],
-                        [rcm(3), reg(3)]],
-                    [rcm(2), reg(2),
-                        [rcm(3), reg(3)],
-                        [rcm(3), reg(3)]]],
-                [rcm(1), reg(1),
-                    [rcm(2), reg(2),
-                        [rcm(3), reg(3)],
-                        [rcm(3), reg(3)]],
-                    [rcm(2), reg(2),
-                        [rcm(3), reg(3)],
-                        [rcm(3), reg(3)]]]]])
+        [pyr(), reg(w_cls),
+            [rcm(0), reg(w_cls, 0),
+                [rcm(1), reg(w_cls, 1),
+                    [rcm(2), reg(w_cls, 2),
+                        [rcm(3), reg(w_cls, 3)],
+                        [rcm(3), reg(w_cls, 3)]],
+                    [rcm(2), reg(w_cls, 2),
+                        [rcm(3), reg(w_cls, 3)],
+                        [rcm(3), reg(w_cls, 3)]]],
+                [rcm(1), reg(w_cls, 1),
+                    [rcm(2), reg(w_cls, 2),
+                        [rcm(3), reg(w_cls, 3)],
+                        [rcm(3), reg(w_cls, 3)]],
+                    [rcm(2), reg(w_cls, 2),
+                        [rcm(3), reg(w_cls, 3)],
+                        [rcm(3), reg(w_cls, 3)]]]]])
 
 ################################################################################
 # Experiment Specifications
 ################################################################################
+
+def class_map(m):
+    return np.transpose(np.float32([
+        np.equal(m, i) for i in range(max(m) + 1)]))
+
+w_cls_cifar2 = class_map([0, 0, 1, 1, 1, 1, 1, 1, 0, 0])
+w_cls_cifar10 = class_map(list(range(10)))
+w_cls_hybrid = class_map(list(range(20)))
 
 ExpSpec = namedtuple(
     'ExperimentSpec',
@@ -194,22 +191,41 @@ ExpSpec = namedtuple(
 exp_specs = {
     'sr-chains': ExpSpec(
         lambda: Dataset('data/cifar-10.mat'),
-        list(map(sr_chain, range(len(tf_specs) + 1)))),
+        [sr_chain(w_cls_cifar2, n_tf)
+         for n_tf in range(len(tf_specs) + 1)]),
     'ds-chains': ExpSpec(
         lambda: Dataset('data/cifar-10.mat'),
-        list(map(ds_chain, k_cpts))),
+        [ds_chain(w_cls_cifar2, k_cpt)
+         for k_cpt in k_cpts]),
     'cr-chains': ExpSpec(
         lambda: Dataset('data/cifar-10.mat'),
-        list(map(cr_chain, k_cpts))),
+        [cr_chain(w_cls_cifar2, k_cpt)
+         for k_cpt in k_cpts]),
     'ds-chains-em': ExpSpec(
         lambda: Dataset('data/cifar-10.mat', n_vl=1280),
-        list(map(ds_chain, k_cpts))),
+        [ds_chain(w_cls_cifar2, k_cpt)
+         for k_cpt in k_cpts]),
     'cr-chains-em': ExpSpec(
         lambda: Dataset('data/cifar-10.mat', n_vl=1280),
-        list(map(cr_chain, k_cpts))),
+        [cr_chain(w_cls_cifar2, k_cpt)
+         for k_cpt in k_cpts]),
     'ds-trees': ExpSpec(
         lambda: Dataset('data/cifar-10.mat'),
-        list(map(ds_tree, k_cpts))),
+        [ds_tree(w_cls_cifar2, k_cpt)
+         for k_cpt in k_cpts]),
     'cr-trees': ExpSpec(
         lambda: Dataset('data/cifar-10.mat'),
-        list(map(cr_tree, k_cpts)))}
+        [cr_tree(w_cls_cifar2, k_cpt)
+         for k_cpt in k_cpts]),
+    'sr-chains-hybrid': ExpSpec(
+        lambda: Dataset('data/hybrid.mat'),
+        [sr_chain(w_cls_hybrid, n_tf)
+         for n_tf in range(len(tf_specs) + 1)]),
+    'ds-chains-em-hybrid': ExpSpec(
+        lambda: Dataset('data/hybrid.mat', n_vl=1280),
+        [ds_chain(w_cls_hybrid, k_cpt)
+         for k_cpt in k_cpts]),
+    'ds-trees-em-hybrid': ExpSpec(
+        lambda: Dataset('data/hybrid.mat', n_vl=1280),
+        [ds_tree(w_cls_hybrid, k_cpt)
+         for k_cpt in k_cpts])}

@@ -279,5 +279,5 @@ class Chain(Layer):
             ('layer%i_%s' % (i, k)): v
             for i, ℓ in enumerate(self.comps)
             for k, v in vars(ℓ.params).items()})
-        if hasattr(self.comps[-1], 'δ_cor'):
+        if len(self.comps) > 0 and hasattr(self.comps[-1], 'δ_cor'):
             self.δ_cor = self.comps[-1].δ_cor
