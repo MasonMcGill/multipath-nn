@@ -6,7 +6,8 @@ from lib.data import Dataset
 from lib.layer_types import (
     BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
     SelectPyramidTop, Softmax, SuperclassCrossEntropyError, ToPyramid)
-from lib.net_types import CRNet, DSNet, SRNet
+from lib.net_types import (
+    AttentionNet, CRNet, DSNet, SRNet, SpikeNet, SpikingConv)
 
 ################################################################################
 # Network Hyperparameters
@@ -16,7 +17,7 @@ x0_shape = (32, 32, 3)
 conv_supp = 3
 router_n_chan = 16
 
-k_cpts = [0.0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8][1:]
+k_cpts = [0.0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8]
 k_cre = 0.01
 k_l2 = 1e-3
 σ_w = 1e-2
@@ -173,10 +174,21 @@ def cr_tree(w_cls, k_cpt=0.0, optimistic=True):
                         [rcm(3), reg(w_cls, 3)]]]]])
 
 def attention_net(w_cls, k_cpt=0.0):
-    from lib.net_types import AttentionNet
     return lambda: AttentionNet(
         x0_shape, w_cls.shape[:1], dict(k_cpt=k_cpt),
         [pyr(), rcm(0), rcm(1), rcm(2), rcm(3), reg(w_cls, 3)])
+
+def spike_net(w_cls, k_cpt=0.0):
+    return lambda: SpikeNet(
+        x0_shape, w_cls.shape[:1], dict(k_cpt=k_cpt),
+        [ToPyramid(), MultiscaleLLN(shape0=x0_shape[:2]),
+         SelectPyramidTop(shape=x0_shape[:2]), BatchNorm(),
+         SpikingConv(n_chan=32, supp=3, stride=2), BatchNorm(),
+         SpikingConv(n_chan=64, supp=3, stride=2), BatchNorm(),
+         SpikingConv(n_chan=128, supp=3, stride=2), BatchNorm(),
+         SpikingConv(n_chan=256, supp=3, stride=2), BatchNorm(),
+         LinTrans(n_chan=w_cls.shape[1], k_l2=k_l2, σ_w=σ_w),
+         Softmax(), SuperclassCrossEntropyError(w_cls=w_cls)])
 
 ################################################################################
 # Experiment Specifications
@@ -238,4 +250,8 @@ exp_specs = {
     'attention-nets': ExpSpec(
         lambda: Dataset('data/cifar-10.mat'),
         [attention_net(w_cls_cifar2, k_cpt)
-         for k_cpt in [1e-7, 1e-8, 0.0]])}
+         for k_cpt in [0.0, 4e-9, 8e-9]]),
+    'spike-nets': ExpSpec(
+        lambda: Dataset('data/cifar-10.mat'),
+        [spike_net(w_cls_cifar2, k_cpt)
+         for k_cpt in [4e-9]])}

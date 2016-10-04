@@ -402,3 +402,123 @@ class AttentionNet:
             self.x0: x0, self.y: y, **{
                 getattr(self.hypers, k): v
                 for k, v in hypers.items()}})
+
+################################################################################
+# Spike Nets
+################################################################################
+
+class SpikingConv(Layer):
+    default_hypers = dict(
+        n_chan=1, supp=1, stride=1,
+        τ=1e-8, k_l2=1e-3, σ_w=1e-9)
+
+    def link(self, x, y, mode, i, training_target):
+        super().link(x, y, mode)
+        ϕ, θ = self.hypers, self.params
+        n_in = x.get_shape().as_list()[3]
+        w_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
+        strides = (1, ϕ.stride, ϕ.stride, 1)
+        w_scale = ϕ.σ_w / ϕ.supp / np.sqrt(n_in)
+        θ.w = tf.Variable(w_scale * tf.random_normal(w_shape))
+        θ.b = tf.Variable(tf.zeros(ϕ.n_chan))
+        self.x_route = tf.nn.conv2d(x, θ.w, strides, 'SAME') + θ.b
+        p = lambda: tf.clip_by_value(self.x_route / ϕ.τ + 0.5, 0, 1)
+        d = lambda: tf.to_float(tf.less(
+            tf.random_uniform(tf.shape(self.x_route)), p()))
+        self.x = tf.cond(tf.less_equal(i, training_target), d, p)
+        self.c_mod = ϕ.k_l2 * tf.reduce_sum(tf.square(θ.w))
+        n_pix = np.prod(self.x.get_shape().as_list()[1:3])
+        self.n_ops = n_pix * ϕ.supp**2 * n_in * ϕ.n_chan
+
+class SpikeNet:
+    default_hypers = dict(k_cpt=0.0, k_cre=1e-5, λ_lrn=1e-3, μ_lrn=0.9)
+
+    def __init__(self, x0_shape, y_shape, hypers, layers):
+        ϕ = self.hypers = Namespace(**{
+            k: tf.placeholder_with_default(v, ())
+            for k, v in {**type(self).default_hypers, **hypers}.items()})
+
+        self.x0 = tf.placeholder(tf.float32, (None,) + x0_shape)
+        self.y = tf.placeholder(tf.float32, (None,) + y_shape)
+        self.mode = tf.placeholder_with_default('ev', ())
+        self.training_target = tf.placeholder_with_default(1000, ())
+        self.layers = layers
+        self.root = layers[0]
+
+        x = self.x0
+        for i, ℓ in enumerate(layers):
+            if isinstance(ℓ, SpikingConv):
+                ℓ.link(x, self.y, self.mode, i, self.training_target)
+            else:
+                ℓ.link(x, self.y, self.mode)
+            ℓ.sinks = layers[i+1:i+2]
+            ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
+            x = ℓ.x
+
+        c_err_x = sum(ℓ.c_err for ℓ in layers)
+        c_mod_x = sum(ℓ.c_mod for ℓ in layers)
+        c_tot_x = c_err_x + c_mod_x
+
+        for i, ℓ in enumerate(layers):
+            if isinstance(ℓ, SpikingConv):
+                n_feat = np.prod(ℓ.x.get_shape().as_list()[1:])
+                n_proj = layers[i+2].n_ops / n_feat
+                layers[i+2].n_ops = n_proj * tf.reduce_sum(ℓ.x, (1, 2, 3))
+                c_err_d = tf.gradients(c_err_x, ℓ.x)
+                c_cpt_d = ϕ.k_cpt * n_proj
+                c_tgt_d = tf.stop_gradient(c_err_d + c_cpt_d)
+                c_cre_d = ϕ.k_cre * tf.reduce_sum(
+                    tf.square(ℓ.x_route + c_tgt_d), (1, 2, 3))
+                ℓ.c_tot_d = c_cre_d + ℓ.c_mod
+
+        opt = tf.train.MomentumOptimizer(ϕ.λ_lrn, ϕ.μ_lrn)
+        self.train_x = opt.minimize(tf.reduce_mean(c_tot_x))
+        self.train_d = [
+            opt.minimize(tf.reduce_mean(ℓ.c_tot_d))
+            if hasattr(ℓ, 'c_tot_d') else tf.no_op()
+            for ℓ in self.layers]
+
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.sess = tf.Session(config=config)
+        self.sess.run(tf.initialize_all_variables())
+
+    def __del__(self):
+        if hasattr(self, 'sess'):
+            self.sess.close()
+
+    @property
+    def leaves(self):
+        yield from self.layers[-1:]
+
+    @property
+    def params(self):
+        return Namespace(
+            **{('layer%i_%s' % (i, k)): v
+               for i, ℓ in enumerate(self.layers)
+               for k, v in vars(ℓ.params).items()})
+
+    def write(self, path):
+        saver = tf.train.Saver(vars(self.params))
+        saver.save(self.sess, path, write_meta_graph=False)
+
+    def read(self, path):
+        saver = tf.train.Saver(vars(self.params))
+        saver.restore(self.sess, path)
+
+    def train(self, x0, y, hypers={}):
+        full_hypers = {
+            getattr(self.hypers, k): v
+            for k, v in hypers.items()}
+        self.sess.run(self.train_x, {
+            self.x0: x0, self.y: y, self.mode: 'tr', **full_hypers})
+        for i, ℓ in reversed(list(enumerate(self.layers))):
+            self.sess.run(self.train_d[i], {
+                self.x0: x0, self.y: y, self.mode: 'tr',
+                self.training_target: i, **full_hypers})
+
+    def eval(self, target, x0, y, hypers={}):
+        return self.sess.run(target, {
+            self.x0: x0, self.y: y, **{
+                getattr(self.hypers, k): v
+                for k, v in hypers.items()}})
