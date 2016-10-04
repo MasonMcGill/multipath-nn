@@ -58,5 +58,5 @@ for i, net_constr in enumerate(exp_specs[args.target].nets):
             log.append(net_desc(net, dataset, {}, state_tensors(net)))
 
 makedirs('stats', exist_ok=True)
-with open('stats/%s.json' % src, 'w') as f:
+with open('stats/%s.json' % args.target, 'w') as f:
     f.write(dumps(log, indent=2))
