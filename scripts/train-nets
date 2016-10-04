@@ -63,4 +63,5 @@ args = parser.parse_args()
 dataset = exp_specs[args.target].dataset()
 for i, net_constr in enumerate(exp_specs[args.target].nets):
     with tf.Graph().as_default():
-        train('nets/%s/net%i' % (args.target, i), dataset, net_constr())
+        train('nets/%s/net%i.tfn' % (args.target, i),
+              dataset, net_constr())
