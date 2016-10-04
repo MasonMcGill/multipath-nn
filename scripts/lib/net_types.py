@@ -284,3 +284,121 @@ class CRNet(Net):
             for k, v in vars(ℓ.router.params).items():
                 setattr(result, 'router%i_%s' % (i, k), v)
         return result
+
+################################################################################
+# Attention Nets
+################################################################################
+
+class AttentionNet:
+    default_hypers = dict(
+        k_cpt=0.0, k_cre=1e-3, k_l2=1e-3, τ=1e-3,
+        λ_lrn=1e-3, μ_lrn=0.9, w_scale=1e-6)
+
+    def __init__(self, x0_shape, y_shape, hypers, layers):
+        ϕ = self.hypers = Namespace(**{
+            k: tf.placeholder_with_default(v, ())
+            for k, v in {**type(self).default_hypers, **hypers}.items()})
+
+        self.x0 = tf.placeholder(tf.float32, (None,) + x0_shape)
+        self.y = tf.placeholder(tf.float32, (None,) + y_shape)
+        self.mode = tf.placeholder_with_default('ev', ())
+        self.training_target = tf.placeholder_with_default(1000, ())
+        self.layers = layers
+        self.root = layers[0]
+
+        x = self.x0
+        for i, ℓ in enumerate(layers):
+            ℓ.link(x, self.y, self.mode)
+            ℓ.sinks = layers[i+1:i+2]
+            ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
+            if type(ℓ).__name__ == 'ReConvMax':
+                n_chan = ℓ.x.get_shape().as_list()[-1]
+                ℓ.w_route = tf.Variable(
+                    ϕ.w_scale / np.sqrt(n_chan)
+                    * tf.random_normal((1, 1, n_chan)))
+                ℓ.b_route = tf.Variable(tf.zeros(()))
+                ℓ.x_route = ℓ.b_route + tf.reduce_sum(
+                    ℓ.x * ℓ.w_route, 2, keep_dims=True)
+                ℓ.d_tr = tf.cond(
+                    tf.less_equal(i, self.training_target),
+                    lambda: tf.to_float(tf.less(
+                        tf.random_uniform(tf.shape(ℓ.x_route)),
+                        tf.clip_by_value(ℓ.x_route / ϕ.τ + 0.5, 0, 1))),
+                    lambda: tf.clip_by_value(ℓ.x_route / ϕ.τ + 0.5, 0, 1))
+                x = ℓ.d_tr * ℓ.x[..., 1:]
+            else:
+                x = ℓ.x
+
+        c_err_x = sum(ℓ.c_err for ℓ in layers)
+        c_mod_x = sum(ℓ.c_mod for ℓ in layers)
+        c_tot_x = c_err_x + c_mod_x
+
+        for i, ℓ in enumerate(layers):
+            if type(ℓ).__name__ == 'ReConvMax':
+                n_proj = layers[i+1].n_ops / ℓ.d_tr.get_shape()[1].value
+                layers[i+1].n_ops = n_proj * tf.reduce_sum(ℓ.d_tr[:, :, 0], 1)
+                c_err_d = tf.gradients(c_err_x, ℓ.d_tr)
+                c_cpt_d = ϕ.k_cpt * n_proj
+                c_tgt_d = tf.stop_gradient(c_err_d + c_cpt_d)
+                c_cre_d = ϕ.k_cre * tf.reduce_sum(
+                    tf.square(ℓ.x_route + c_tgt_d), 1)
+                c_mod_d = ϕ.k_l2 * tf.reduce_sum(tf.square(ℓ.w_route))
+                ℓ.c_tot_d = c_cre_d + c_mod_d
+
+        opt = tf.train.MomentumOptimizer(ϕ.λ_lrn, ϕ.μ_lrn)
+        self.train_x = opt.minimize(tf.reduce_mean(c_tot_x))
+        self.train_d = [
+            opt.minimize(tf.reduce_mean(ℓ.c_tot_d))
+            if hasattr(ℓ, 'c_tot_d') else tf.no_op()
+            for ℓ in self.layers]
+
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.sess = tf.Session(config=config)
+        self.sess.run(tf.initialize_all_variables())
+
+    def __del__(self):
+        if hasattr(self, 'sess'):
+            self.sess.close()
+
+    @property
+    def leaves(self):
+        yield from self.layers[-1:]
+
+    @property
+    def params(self):
+        return Namespace(
+            **{('layer%i_%s' % (i, k)): v
+               for i, ℓ in enumerate(self.layers)
+               for k, v in vars(ℓ.params).items()},
+            **{('w%i_%s' % i): ℓ.w_route
+                for i, ℓ in enumerate(self.layers)
+                if hasattr(ℓ, 'w_route')},
+            **{('b%i_%s' % i): ℓ.b_route
+                for i, ℓ in enumerate(self.layers)
+                if hasattr(ℓ, 'b_route')})
+
+    def write(self, path):
+        saver = tf.train.Saver(vars(self.params))
+        saver.save(self.sess, path, write_meta_graph=False)
+
+    def read(self, path):
+        saver = tf.train.Saver(vars(self.params))
+        saver.restore(self.sess, path)
+
+    def train(self, x0, y, hypers={}):
+        full_hypers = {
+            getattr(self.hypers, k): v
+            for k, v in hypers.items()}
+        self.sess.run(self.train_x, {
+            self.x0: x0, self.y: y, self.mode: 'tr', **full_hypers})
+        for i, ℓ in reversed(list(enumerate(self.layers))):
+            self.sess.run(self.train_d[i], {
+                self.x0: x0, self.y: y, self.mode: 'tr',
+                self.training_target: i, **full_hypers})
+
+    def eval(self, target, x0, y, hypers={}):
+        return self.sess.run(target, {
+            self.x0: x0, self.y: y, **{
+                getattr(self.hypers, k): v
+                for k, v in hypers.items()}})

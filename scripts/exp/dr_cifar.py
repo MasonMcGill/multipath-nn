@@ -16,7 +16,7 @@ x0_shape = (32, 32, 3)
 conv_supp = 3
 router_n_chan = 16
 
-k_cpts = [0.0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8]
+k_cpts = [0.0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8][1:]
 k_cre = 0.01
 k_l2 = 1e-3
 σ_w = 1e-2
@@ -172,6 +172,12 @@ def cr_tree(w_cls, k_cpt=0.0, optimistic=True):
                         [rcm(3), reg(w_cls, 3)],
                         [rcm(3), reg(w_cls, 3)]]]]])
 
+def attention_net(w_cls, k_cpt=0.0):
+    from lib.net_types import AttentionNet
+    return lambda: AttentionNet(
+        x0_shape, w_cls.shape[:1], dict(k_cpt=k_cpt),
+        [pyr(), rcm(0), rcm(1), rcm(2), rcm(3), reg(w_cls, 3)])
+
 ################################################################################
 # Experiment Specifications
 ################################################################################
@@ -228,4 +234,8 @@ exp_specs = {
     'ds-trees-em-hybrid': ExpSpec(
         lambda: Dataset('data/hybrid.mat', n_vl=1280),
         [ds_tree(w_cls_hybrid, k_cpt)
-         for k_cpt in k_cpts])}
+         for k_cpt in k_cpts]),
+    'attention-nets': ExpSpec(
+        lambda: Dataset('data/cifar-10.mat'),
+        [attention_net(w_cls_cifar2, k_cpt)
+         for k_cpt in [1e-7, 1e-8, 0.0]])}
