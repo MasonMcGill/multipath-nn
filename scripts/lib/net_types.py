@@ -291,8 +291,8 @@ class CRNet(Net):
 
 class AttentionNet:
     default_hypers = dict(
-        k_cpt=0.0, k_cre=1e-3, k_l2=1e-3, τ=1e-3,
-        λ_lrn=1e-3, μ_lrn=0.9, w_scale=1e-6)
+        k_cpt=0.0, k_cre=1e-4, k_l2=0.1, τ=1e-5,
+        λ_lrn=1e-3, μ_lrn=0.9, σ_w=1e-6)
 
     def __init__(self, x0_shape, y_shape, hypers, layers):
         ϕ = self.hypers = Namespace(**{
@@ -314,7 +314,7 @@ class AttentionNet:
             if type(ℓ).__name__ == 'ReConvMax':
                 n_chan = ℓ.x.get_shape().as_list()[-1]
                 ℓ.w_route = tf.Variable(
-                    ϕ.w_scale / np.sqrt(n_chan)
+                    ϕ.σ_w / np.sqrt(n_chan)
                     * tf.random_normal((1, 1, n_chan)))
                 ℓ.b_route = tf.Variable(tf.zeros(()))
                 ℓ.x_route = ℓ.b_route + tf.reduce_sum(
@@ -371,10 +371,10 @@ class AttentionNet:
             **{('layer%i_%s' % (i, k)): v
                for i, ℓ in enumerate(self.layers)
                for k, v in vars(ℓ.params).items()},
-            **{('w%i_%s' % i): ℓ.w_route
+            **{('w_route%i' % i): ℓ.w_route
                 for i, ℓ in enumerate(self.layers)
                 if hasattr(ℓ, 'w_route')},
-            **{('b%i_%s' % i): ℓ.b_route
+            **{('b_route%i' % i): ℓ.b_route
                 for i, ℓ in enumerate(self.layers)
                 if hasattr(ℓ, 'b_route')})
 
