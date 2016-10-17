@@ -213,13 +213,15 @@ class BatchNorm(Layer):
         θ.β = tf.Variable(tf.zeros(n_chan))
         θ.m_avg = tf.Variable(tf.zeros(n_chan), trainable=False)
         θ.v_avg = tf.Variable(tf.ones(n_chan), trainable=False)
-        m_batch, v_batch = tf.nn.moments(x, tuple(range(n_dim - 1)))
-        update_m = tf.assign(θ.m_avg, ϕ.d * θ.m_avg + (1 - ϕ.d) * m_batch)
-        update_v = tf.assign(θ.v_avg, ϕ.d * θ.v_avg + (1 - ϕ.d) * v_batch)
-        with tf.control_dependencies([update_m, update_v]):
-            x_tr = θ.γ * (x - m_batch) / tf.sqrt(v_batch + ϕ.ϵ) + θ.β
-        x_ev = θ.γ * (x - θ.m_avg) / tf.sqrt(θ.v_avg + ϕ.ϵ) + θ.β
-        self.x = tf.cond(tf.equal(mode, 'tr'), lambda: x_tr, lambda: x_ev)
+        def x_tr():
+            m_batch, v_batch = tf.nn.moments(x, tuple(range(n_dim - 1)))
+            update_m = tf.assign(θ.m_avg, ϕ.d * θ.m_avg + (1 - ϕ.d) * m_batch)
+            update_v = tf.assign(θ.v_avg, ϕ.d * θ.v_avg + (1 - ϕ.d) * v_batch)
+            with tf.control_dependencies([update_m, update_v]):
+                return θ.γ * (x - m_batch) / tf.sqrt(v_batch + ϕ.ϵ) + θ.β
+        def x_ev():
+            return θ.γ * (x - θ.m_avg) / tf.sqrt(θ.v_avg + ϕ.ϵ) + θ.β
+        self.x = tf.cond(tf.equal(mode, 'tr'), x_tr, x_ev)
 
 ################################################################################
 # Error Layers
