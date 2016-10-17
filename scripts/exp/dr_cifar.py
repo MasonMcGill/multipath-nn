@@ -6,8 +6,7 @@ from lib.data import Dataset
 from lib.layer_types import (
     BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
     SelectPyramidTop, Softmax, SuperclassCrossEntropyError, ToPyramid)
-from lib.net_types import (
-    AttentionNet, CRNet, DSNet, SRNet, SpikeNet, SpikingConv)
+from lib.net_types import CRNet, DSNet, SRNet
 
 ################################################################################
 # Network Hyperparameters
@@ -173,23 +172,6 @@ def cr_tree(w_cls, k_cpt=0.0, optimistic=True):
                         [rcm(3), reg(w_cls, 3)],
                         [rcm(3), reg(w_cls, 3)]]]]])
 
-def attention_net(w_cls, k_cpt=0.0):
-    return lambda: AttentionNet(
-        x0_shape, w_cls.shape[:1], dict(k_cpt=k_cpt),
-        [pyr(), rcm(0), rcm(1), rcm(2), rcm(3), reg(w_cls, 3)])
-
-def spike_net(w_cls, k_cpt=0.0):
-    return lambda: SpikeNet(
-        x0_shape, w_cls.shape[:1], dict(k_cpt=k_cpt),
-        [ToPyramid(), MultiscaleLLN(shape0=x0_shape[:2]),
-         SelectPyramidTop(shape=x0_shape[:2]), BatchNorm(),
-         SpikingConv(n_chan=32, supp=3, stride=2), BatchNorm(),
-         SpikingConv(n_chan=64, supp=3, stride=2), BatchNorm(),
-         SpikingConv(n_chan=128, supp=3, stride=2), BatchNorm(),
-         SpikingConv(n_chan=256, supp=3, stride=2), BatchNorm(),
-         LinTrans(n_chan=w_cls.shape[1], k_l2=k_l2, σ_w=σ_w),
-         Softmax(), SuperclassCrossEntropyError(w_cls=w_cls)])
-
 ################################################################################
 # Experiment Specifications
 ################################################################################
@@ -246,12 +228,4 @@ exp_specs = {
     'ds-trees-em-hybrid': ExpSpec(
         lambda: Dataset('data/hybrid.mat', n_vl=1280),
         [ds_tree(w_cls_hybrid, k_cpt)
-         for k_cpt in k_cpts]),
-    'attention-nets': ExpSpec(
-        lambda: Dataset('data/cifar-10.mat'),
-        [attention_net(w_cls_cifar2, k_cpt)
-         for k_cpt in [0.0, 4e-9, 8e-9]]),
-    'spike-nets': ExpSpec(
-        lambda: Dataset('data/cifar-10.mat'),
-        [spike_net(w_cls_cifar2, k_cpt)
-         for k_cpt in [4e-9]])}
+         for k_cpt in k_cpts])}
