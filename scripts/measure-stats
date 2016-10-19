@@ -9,8 +9,9 @@ from os.path import isfile
 
 import tensorflow as tf
 
-from lib.desc import net_desc
 from exp.dr_cifar import exp_specs
+from lib.desc import net_desc
+from lib.serdes import read_net
 
 ################################################################################
 # Define network statistics.
@@ -50,12 +51,13 @@ args = parser.parse_args()
 dataset = exp_specs[args.target].dataset()
 log = []
 
-for i, net_constr in enumerate(exp_specs[args.target].nets):
+for i in range(len(exp_specs[args.target].nets)):
     if isfile('nets/%s/net%i.tfn' % (args.target, i)):
         with tf.Graph().as_default():
-            net = net_constr()
-            net.read('nets/%s/net%i.tfn' % (args.target, i))
-            log.append(net_desc(net, dataset, {}, state_tensors(net)))
+            sess = tf.Session()
+            with sess.as_default():
+                net = read_net('nets/%s/net%i.npy' % (args.target, i))
+                log.append(net_desc(net, dataset, {}, state_tensors(net)))
 
 makedirs('stats', exist_ok=True)
 with open('stats/%s.json' % args.target, 'w') as f:

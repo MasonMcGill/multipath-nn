@@ -14,14 +14,15 @@ def mean_net_state(net, tensors, data, hypers):
         sums = {k: 0 for k in tensors.keys()}
         count = 0
         for x0, y in data:
-            samples = net.eval(tensors, x0, y, hypers)
+            samples = tf.get_default_session().run(
+                tensors, {net.x0: x0, net.y: y, **hypers})
             for k in tensors.keys():
                 sums[k] += np.sum(samples[k], 0)
             count += len(x0)
         return {k: (sums[k] / count).tolist() for k in tensors.keys()}
 
 def layer_desc(ℓ, stats_tr, stats_ts):
-    return {'type': type(ℓ).__name__,
+    return {'name': ℓ.name,
             'stats_tr': {k: v for (t, k), v in stats_tr.items() if t == ℓ},
             'stats_ts': {k: v for (t, k), v in stats_ts.items() if t == ℓ},
             'sinks': [layer_desc(s, stats_tr, stats_ts) for s in ℓ.sinks]}
@@ -48,7 +49,7 @@ def render_layer_desc(desc, stats_key):
         '\n↳ ' + render_layer_desc(s, stats_key).replace(
             '\n', '\n| ' if i < len(desc['sinks']) - 1 else '\n  ')
         for i, s in enumerate(desc['sinks']))
-    return '%s %s%s' % (desc['type'], render_stats(desc[stats_key]), sink_text)
+    return '%s %s%s' % (desc['name'], render_stats(desc[stats_key]), sink_text)
 
 def render_net_desc(desc, name='Network'):
     return (

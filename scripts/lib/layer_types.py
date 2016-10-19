@@ -1,5 +1,5 @@
 from abc import ABCMeta
-from types import SimpleNamespace as Namespace
+from types import SimpleNamespace as Ns
 
 import numpy as np
 import tensorflow as tf
@@ -9,12 +9,15 @@ import tensorflow as tf
 ################################################################################
 
 class Layer(metaclass=ABCMeta):
-    default_hypers = {}
+    default_hypers = Ns()
 
-    def __init__(self, **hypers):
-        full_hyper_dict = {**self.__class__.default_hypers, **hypers}
-        self.hypers = Namespace(**full_hyper_dict)
-        self.params = Namespace()
+    def __init__(self, **options):
+        self.name = options.pop('name', type(self).__name__)
+        self.router = options.pop('router', None)
+        self.sinks = options.pop('sinks', [])
+        self.comps = options.pop('comps', [])
+        self.hypers = Ns(**{**vars(type(self).default_hypers), **options})
+        self.params = Ns()
 
     def link(self, x, y, mode):
         self.x = x
@@ -23,11 +26,18 @@ class Layer(metaclass=ABCMeta):
         self.n_ops = tf.zeros(())
 
 ################################################################################
+# The No-Op Layer
+################################################################################
+
+class NoOp(Layer):
+    pass
+
+################################################################################
 # Transformation Layers
 ################################################################################
 
 class LinTrans(Layer):
-    default_hypers = dict(n_chan=1, k_l2=0, σ_w=1, res=False)
+    default_hypers = Ns(n_chan=1, k_l2=0, σ_w=1, res=False)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -43,7 +53,7 @@ class LinTrans(Layer):
         self.n_ops = n_in * ϕ.n_chan
 
 class Conv(Layer):
-    default_hypers = dict(n_chan=1, supp=1, k_l2=0, σ_w=1, res=False)
+    default_hypers = Ns(n_chan=1, supp=1, k_l2=0, σ_w=1, res=False)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -74,7 +84,7 @@ class Softmax(Layer):
         self.x = tf.nn.softmax(x)
 
 class MaxPool(Layer):
-    default_hypers = dict(stride=1, supp=1)
+    default_hypers = Ns(stride=1, supp=1)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -117,14 +127,14 @@ def unpack_pyramid(x, shape0):
     return x_unpacked
 
 class ToPyramid(Layer):
-    default_hypers = dict(n_scales=1)
+    default_hypers = Ns(n_scales=1)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
         self.x = pack_pyramid(to_pyramid(x, self.hypers.n_scales))
 
 class MultiscaleLLN(Layer):
-    default_hypers = dict(shape0=(1, 1), σ=3, ϵ=1e-3)
+    default_hypers = Ns(shape0=(1, 1), σ=3, ϵ=1e-3)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -147,7 +157,7 @@ class MultiscaleLLN(Layer):
         self.x = pack_pyramid(x_out_unpacked)
 
 class MultiscaleConvMax(Layer):
-    default_hypers = dict(
+    default_hypers = Ns(
         shape0=(1, 1), n_scales=1, n_chan=1,
         supp=1, res=False, k_l2=0, σ_w=1)
 
@@ -182,7 +192,7 @@ class MultiscaleConvMax(Layer):
         self.n_ops = n_pix * ϕ.supp**2 * n_in * ϕ.n_chan
 
 class SelectPyramidTop(Layer):
-    default_hypers = dict(shape=(1, 1))
+    default_hypers = Ns(shape=(1, 1))
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -195,14 +205,14 @@ class SelectPyramidTop(Layer):
 ################################################################################
 
 class Dropout(Layer):
-    default_hypers = dict(λ=1)
+    default_hypers = Ns(λ=1)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
         self.x = tf.nn.dropout(x, self.hypers.λ)
 
 class BatchNorm(Layer):
-    default_hypers = dict(d=0.9, ϵ=1e-6)
+    default_hypers = Ns(d=0.9, ϵ=1e-6)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -235,7 +245,7 @@ class SquaredError(Layer):
             tf.argmax(self.x, 1), tf.argmax(y, 1)))
 
 class CrossEntropyError(Layer):
-    default_hypers = dict(ϵ=1e-6)
+    default_hypers = Ns(ϵ=1e-6)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -247,7 +257,7 @@ class CrossEntropyError(Layer):
             tf.argmax(self.x, 1), tf.argmax(y, 1)))
 
 class SuperclassCrossEntropyError(Layer):
-    default_hypers = dict(w_cls=None, ϵ=1e-6)
+    default_hypers = Ns(w_cls=None, ϵ=1e-6)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
@@ -264,10 +274,6 @@ class SuperclassCrossEntropyError(Layer):
 ################################################################################
 
 class Chain(Layer):
-    def __init__(self, *comps):
-        super().__init__(comps=[type(c).__name__ for c in comps])
-        self.comps = comps
-
     def link(self, x, y, mode):
         super().link(x, y, mode)
         for ℓ in self.comps:
@@ -277,9 +283,5 @@ class Chain(Layer):
         self.c_err = sum(ℓ.c_err for ℓ in self.comps)
         self.c_mod = sum(ℓ.c_mod for ℓ in self.comps)
         self.n_ops = sum(ℓ.n_ops for ℓ in self.comps)
-        self.params = Namespace(**{
-            ('layer%i_%s' % (i, k)): v
-            for i, ℓ in enumerate(self.comps)
-            for k, v in vars(ℓ.params).items()})
         if len(self.comps) > 0 and hasattr(self.comps[-1], 'δ_cor'):
             self.δ_cor = self.comps[-1].δ_cor

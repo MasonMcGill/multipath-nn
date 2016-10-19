@@ -17,7 +17,6 @@ conv_supp = 3
 router_n_chan = 16
 
 k_cpts = [0.0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8]
-k_cre = 0.01
 k_l2 = 1e-3
 σ_w = 1e-2
 
@@ -44,8 +43,8 @@ tf_specs = [
 # Training Hyperparameters
 ################################################################################
 
-n_epochs = 25
-logging_period = 5
+n_epochs = 1#25
+logging_period = 1#5
 batch_size = 128
 
 λ_lrn_0 = 0.001
@@ -55,122 +54,118 @@ t_anneal = 5
 # Network Components
 ################################################################################
 
-class ToPyramidLLN(Chain):
-    def __init__(self, shape0, n_scales):
-        super().__init__(
-            ToPyramid(n_scales=n_scales),
-            MultiscaleLLN(shape0=shape0),
-            BatchNorm())
-
-class ReConvMax(Chain):
-    def __init__(self, shape0, n_scales, n_chan):
-        super().__init__(
-            MultiscaleConvMax(
-                shape0=shape0, n_scales=n_scales, n_chan=n_chan,
-                supp=conv_supp, k_l2=k_l2, σ_w=σ_w),
-            BatchNorm(), Rect())
-
-class LogReg(Chain):
-    def __init__(self, shape0, w_cls):
-        super().__init__(
-            SelectPyramidTop(shape=tf_specs[-1][-1]),
-            LinTrans(n_chan=w_cls.shape[1], k_l2=k_l2, σ_w=σ_w),
-            Softmax(), SuperclassCrossEntropyError(w_cls=w_cls))
-
-def gen_ds_router(ℓ):
-    return Chain(
+def router(n_sinks):
+    return Chain(name='Router', comps=[
         SelectPyramidTop(shape=tf_specs[-1][-1]),
         LinTrans(n_chan=router_n_chan, k_l2=k_l2, σ_w=σ_w),
-        BatchNorm(), Rect(), LinTrans(n_chan=len(ℓ.sinks), k_l2=k_l2))
+        BatchNorm(), Rect(), LinTrans(n_chan=n_sinks, k_l2=k_l2)])
 
-def gen_cr_router(ℓ):
+def pyr(*sinks):
     return Chain(
+        name='ToPyramidLLN', sinks=sinks,
+        router=router(len(sinks)), comps=[
+            ToPyramid(n_scales=tf_specs[0].n_scales),
+            MultiscaleLLN(shape0=tf_specs[0].shape0_in),
+            BatchNorm()])
+
+def rcm(i, *sinks):
+    return Chain(
+        name='ReConvMax', sinks=sinks,
+        router=router(len(sinks)), comps=[
+            MultiscaleConvMax(
+                shape0=tf_specs[i].shape0_in, n_scales=tf_specs[i].n_scales,
+                n_chan=tf_specs[i].n_chan, supp=conv_supp, k_l2=k_l2, σ_w=σ_w),
+            BatchNorm(), Rect()])
+
+def reg(w_cls):
+    return Chain(name='LogReg', comps=[
         SelectPyramidTop(shape=tf_specs[-1][-1]),
-        LinTrans(n_chan=router_n_chan, k_l2=(k_l2 * k_cre), σ_w=σ_w),
-        BatchNorm(), Rect(), LinTrans(n_chan=len(ℓ.sinks), k_l2=(k_l2 * k_cre)))
-
-################################################################################
-# Layer Tree Construction Shorthand
-################################################################################
-
-def pyr():
-    return ToPyramidLLN(*tf_specs[0][:2])
-
-def reg(w_cls, i=None):
-    return (LogReg(tf_specs[0][0], w_cls) if i is None
-            else LogReg(tf_specs[i][3], w_cls))
-
-def rcm(i):
-    return ReConvMax(*tf_specs[i][:3])
+        LinTrans(n_chan=w_cls.shape[1], k_l2=k_l2, σ_w=σ_w),
+        Softmax(), SuperclassCrossEntropyError(w_cls=w_cls)])
 
 ################################################################################
 # Network Constructors
 ################################################################################
 
 def sr_chain(w_cls, n_tf):
-    layers = reg(w_cls, n_tf - 1),
-    for i in reversed(range(n_tf)):
-        layers = [rcm(i), layers]
-    layers = [pyr(), layers]
-    return lambda: SRNet(x0_shape, w_cls.shape[:1], {}, layers)
+    def make_net():
+        root = reg(w_cls)
+        for i in reversed(range(n_tf)):
+            root = rcm(i, root)
+        root = pyr(root)
+        return SRNet(
+            x0_shape=x0_shape,
+            y_shape=w_cls.shape[:1],
+            root=root)
+    return make_net
 
 def ds_chain(w_cls, k_cpt=0.0):
-    layers = [rcm(-1), reg(w_cls, -1)]
-    for i in reversed(range(len(tf_specs) - 1)):
-        layers = [rcm(i), reg(w_cls, i), layers]
-    layers = [pyr(), reg(w_cls), layers]
-    return lambda: DSNet(x0_shape, w_cls.shape[:1], gen_ds_router,
-                         dict(k_cpt=k_cpt), layers)
+    def make_net():
+        root = rcm(-1, reg(w_cls))
+        for i in reversed(range(len(tf_specs) - 1)):
+            root = rcm(i, reg(w_cls), root)
+        root = pyr(reg(w_cls), root)
+        return DSNet(
+            x0_shape=x0_shape,
+            y_shape=w_cls.shape[:1],
+            k_cpt=k_cpt, root=root)
+    return make_net
 
-def cr_chain(w_cls, k_cpt=0.0, optimistic=True):
-    layers = [rcm(-1), reg(w_cls, -1)]
-    for i in reversed(range(len(tf_specs) - 1)):
-        layers = [rcm(i), reg(w_cls, i), layers]
-    layers = [pyr(), reg(w_cls), layers]
-    return lambda: CRNet(x0_shape, w_cls.shape[:1], gen_cr_router,
-                         optimistic, dict(k_cpt=k_cpt), layers)
+def cr_chain(w_cls, k_cpt=0.0):
+    def make_net():
+        root = rcm(-1, reg(w_cls))
+        for i in reversed(range(len(tf_specs) - 1)):
+            root = rcm(i, reg(w_cls), root)
+        root = pyr(reg(w_cls), root)
+        return CRNet(
+            x0_shape=x0_shape,
+            y_shape=w_cls.shape[:1],
+            k_cpt=k_cpt, root=root)
+    return make_net
 
 def ds_tree(w_cls, k_cpt=0.0):
     return lambda: DSNet(
-        x0_shape, w_cls.shape[:1],
-        gen_ds_router, dict(k_cpt=k_cpt),
-        [pyr(), reg(w_cls),
-            [rcm(0), reg(w_cls, 0),
-                [rcm(1), reg(w_cls, 1),
-                    [rcm(2), reg(w_cls, 2),
-                        [rcm(3), reg(w_cls, 3)],
-                        [rcm(3), reg(w_cls, 3)]],
-                    [rcm(2), reg(w_cls, 2),
-                        [rcm(3), reg(w_cls, 3)],
-                        [rcm(3), reg(w_cls, 3)]]],
-                [rcm(1), reg(w_cls, 1),
-                    [rcm(2), reg(w_cls, 2),
-                        [rcm(3), reg(w_cls, 3)],
-                        [rcm(3), reg(w_cls, 3)]],
-                    [rcm(2), reg(w_cls, 2),
-                        [rcm(3), reg(w_cls, 3)],
-                        [rcm(3), reg(w_cls, 3)]]]]])
+        x0_shape=x0_shape,
+        y_shape=w_cls.shape[:1],
+        k_cpt=k_cpt, root=(
+            pyr(reg(w_cls),
+                rcm(0, reg(w_cls),
+                    rcm(1, reg(w_cls),
+                        rcm(2, reg(w_cls),
+                            rcm(3, reg(w_cls)),
+                            rcm(3, reg(w_cls))),
+                        rcm(2, reg(w_cls),
+                            rcm(3, reg(w_cls)),
+                            rcm(3, reg(w_cls)))),
+                    rcm(1, reg(w_cls),
+                        rcm(2, reg(w_cls),
+                            rcm(3, reg(w_cls)),
+                            rcm(3, reg(w_cls))),
+                        rcm(2, reg(w_cls),
+                            rcm(3, reg(w_cls)),
+                            rcm(3, reg(w_cls))))))))
 
-def cr_tree(w_cls, k_cpt=0.0, optimistic=True):
+def cr_tree(w_cls, k_cpt=0.0):
     return lambda: CRNet(
-        x0_shape, w_cls.shape[:1], gen_cr_router,
-        optimistic, dict(k_cpt=k_cpt),
-        [pyr(), reg(w_cls),
-            [rcm(0), reg(w_cls, 0),
-                [rcm(1), reg(w_cls, 1),
-                    [rcm(2), reg(w_cls, 2),
-                        [rcm(3), reg(w_cls, 3)],
-                        [rcm(3), reg(w_cls, 3)]],
-                    [rcm(2), reg(w_cls, 2),
-                        [rcm(3), reg(w_cls, 3)],
-                        [rcm(3), reg(w_cls, 3)]]],
-                [rcm(1), reg(w_cls, 1),
-                    [rcm(2), reg(w_cls, 2),
-                        [rcm(3), reg(w_cls, 3)],
-                        [rcm(3), reg(w_cls, 3)]],
-                    [rcm(2), reg(w_cls, 2),
-                        [rcm(3), reg(w_cls, 3)],
-                        [rcm(3), reg(w_cls, 3)]]]]])
+        x0_shape=x0_shape,
+        y_shape=w_cls.shape[:1],
+        k_cpt=k_cpt, root=(
+            pyr(reg(w_cls),
+                rcm(0, reg(w_cls),
+                    rcm(1, reg(w_cls),
+                        rcm(2, reg(w_cls),
+                            rcm(3, reg(w_cls)),
+                            rcm(3, reg(w_cls))),
+                        rcm(2, reg(w_cls),
+                            rcm(3, reg(w_cls)),
+                            rcm(3, reg(w_cls)))),
+                    rcm(1, reg(w_cls),
+                        rcm(2, reg(w_cls),
+                            rcm(3, reg(w_cls)),
+                            rcm(3, reg(w_cls))),
+                        rcm(2, reg(w_cls),
+                            rcm(3, reg(w_cls)),
+                            rcm(3, reg(w_cls))))))))
 
 ################################################################################
 # Experiment Specifications

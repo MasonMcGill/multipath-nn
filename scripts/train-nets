@@ -14,6 +14,7 @@ from exp.dr_cifar import (
     batch_size, exp_specs, logging_period,
     n_epochs, t_anneal, λ_lrn_0)
 from lib.desc import net_desc, render_net_desc
+from lib.serdes import write_net
 
 ################################################################################
 # Define network statistics.
@@ -38,13 +39,14 @@ def train(dst, dataset, net):
         shuffle(batches)
         for mode, (x0, y) in batches:
             op = net.validate if mode == 'vl' else net.train
-            op(x0, y, {'λ_lrn': λ_lrn_0 / 2**(t / t_anneal)})
+            op.run({net.x0: x0, net.y: y, net.mode: mode,
+                    net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)})
         if (t + 1) % logging_period == 0:
             print(render_net_desc(
                 net_desc(net, dataset, {}, net_state),
                 '%s — Epoch %i' % (dst, t + 1)))
     makedirs(dirname(dst), exist_ok=True)
-    net.write(dst)
+    write_net(dst, net)
 
 ################################################################################
 # Parse command-line arguments.
@@ -63,5 +65,8 @@ args = parser.parse_args()
 dataset = exp_specs[args.target].dataset()
 for i, net_constr in enumerate(exp_specs[args.target].nets):
     with tf.Graph().as_default():
-        train('nets/%s/net%i.tfn' % (args.target, i),
-              dataset, net_constr())
+        sess = tf.Session()
+        with sess.as_default():
+            net = net_constr()
+            tf.initialize_all_variables().run()
+            train('nets/%s/net%i.npy' % (args.target, i), dataset, net)
