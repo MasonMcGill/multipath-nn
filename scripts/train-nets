@@ -3,21 +3,176 @@
 Train statically- or dynamically-routed networks.
 '''
 from argparse import ArgumentParser
+from collections import namedtuple
 from os import makedirs
-from os.path import dirname
+from os.path import dirname, join
 from random import shuffle
 
 import numpy as np
 import tensorflow as tf
 
-from exp.dr_cifar import (
-    batch_size, exp_specs, logging_period,
-    n_epochs, t_anneal, λ_lrn_0)
+from lib.data import Dataset
 from lib.desc import net_desc, render_net_desc
+from lib.layer_types import (
+    BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
+    SelectPyramidTop, Softmax, CrossEntropyError, ToPyramid)
+from lib.net_types import CRNet, DSNet, SRNet
 from lib.serdes import write_net
 
 ################################################################################
-# Define network statistics.
+# Define network hyperparameters.
+################################################################################
+
+conv_supp = 3
+router_n_chan = 16
+
+k_cpts = [0.0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8]
+k_l2 = 1e-3
+σ_w = 1e-2
+
+TFSpec = namedtuple(
+    'TransformSpec',
+    'shape0_in n_scales '
+    'n_chan shape0_out')
+
+tf_specs = [
+    TFSpec((32, 32), 4, 32, (32, 32)),
+    TFSpec((32, 32), 4, 32, (32, 32)),
+    TFSpec((32, 32), 3, 32, (16, 16)),
+    TFSpec((16, 16), 3, 64, (16, 16)),
+    TFSpec((16, 16), 3, 64, (16, 16)),
+    TFSpec((16, 16), 2, 64, (8, 8)),
+    TFSpec((8, 8), 2, 128, (8, 8)),
+    TFSpec((8, 8), 2, 128, (8, 8)),
+    TFSpec((8, 8), 1, 128, (4, 4)),
+    TFSpec((4, 4), 1, 256, (4, 4)),
+    TFSpec((4, 4), 1, 256, (4, 4)),
+    TFSpec((4, 4), 1, 256, (4, 4))]
+
+################################################################################
+# Define training hyperparameters.
+################################################################################
+
+n_vl = 1280
+
+n_epochs = 25
+logging_period = 5
+batch_size = 128
+
+λ_lrn_0 = 0.001
+t_anneal = 5
+
+################################################################################
+# Parse command-line arguments.
+################################################################################
+
+parser = ArgumentParser(description=__doc__)
+parser.add_argument('net_type', help='the type of network to train')
+parser.add_argument('data_path', help='the dataset to use')
+parser.add_argument('net_path', help='the output directory')
+parser.add_argument('--use_em', help='use error mapping', action='store_true')
+args = parser.parse_args()
+
+################################################################################
+# Load the dataset.
+################################################################################
+
+dataset = Dataset(args.data_path, n_vl * args.use_em)
+x0_shape = dataset.x0_shape
+y_shape = dataset.y_shape
+
+################################################################################
+# Define network components.
+################################################################################
+
+def router(n_sinks):
+    return Chain(name='Router', comps=[
+        SelectPyramidTop(shape=tf_specs[-1].shape0_out),
+        LinTrans(n_chan=router_n_chan, k_l2=k_l2, σ_w=σ_w),
+        BatchNorm(), Rect(), LinTrans(n_chan=n_sinks, k_l2=k_l2)])
+
+def pyr(*sinks):
+    return Chain(
+        name='ToPyramidLLN', sinks=sinks,
+        router=router(len(sinks)), comps=[
+            ToPyramid(n_scales=tf_specs[0].n_scales),
+            MultiscaleLLN(shape0=tf_specs[0].shape0_in),
+            BatchNorm()])
+
+def rcm(i, *sinks):
+    return Chain(
+        name='ReConvMax', sinks=sinks,
+        router=router(len(sinks)), comps=[
+            MultiscaleConvMax(
+                shape0=tf_specs[i].shape0_in, n_scales=tf_specs[i].n_scales,
+                n_chan=tf_specs[i].n_chan, supp=conv_supp, k_l2=k_l2, σ_w=σ_w),
+            BatchNorm(), Rect()])
+
+def reg():
+    return Chain(name='LogReg', comps=[
+        SelectPyramidTop(shape=tf_specs[-1].shape0_out),
+        LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=σ_w),
+        Softmax(), CrossEntropyError()])
+
+################################################################################
+# Define network constructors lists.
+################################################################################
+
+def sr_chain(n_tf):
+    def make_net():
+        root = reg()
+        for i in reversed(range(n_tf)):
+            root = rcm(i, root)
+        root = pyr(root)
+        return SRNet(
+            x0_shape=x0_shape,
+            y_shape=y_shape,
+            root=root)
+    return make_net
+
+def dr_chain(type_, k_cpt=0.0):
+    def make_net():
+        root = rcm(-1, reg())
+        for i in reversed(range(len(tf_specs) - 1)):
+            root = rcm(i, reg(), root)
+        root = pyr(reg(), root)
+        return type_(
+            x0_shape=x0_shape,
+            y_shape=y_shape,
+            k_cpt=k_cpt, root=root)
+    return make_net
+
+def dr_tree(type_, k_cpt=0.0):
+    return lambda: type_(
+        x0_shape=x0_shape,
+        y_shape=y_shape,
+        k_cpt=k_cpt, root=(
+            pyr(reg(),
+                rcm(0, reg(),
+                    rcm(1, reg(),
+                        rcm(2, reg(),
+                            rcm(3, reg()),
+                            rcm(3, reg())),
+                        rcm(2, reg(),
+                            rcm(3, reg()),
+                            rcm(3, reg()))),
+                    rcm(1, reg(),
+                        rcm(2, reg(),
+                            rcm(3, reg()),
+                            rcm(3, reg())),
+                        rcm(2, reg(),
+                            rcm(3, reg()),
+                            rcm(3, reg())))))))
+
+net_constr_lists = {
+    'sr-chains': [sr_chain(n) for n in range(len(tf_specs) + 1)],
+    'ds-chains': [dr_chain(DSNet, k) for k in k_cpts],
+    'cr-chains': [dr_chain(CRNet, k) for k in k_cpts],
+    'ds-trees': [dr_tree(DSNet, k) for k in k_cpts],
+    'cr-trees': [dr_tree(CRNet, k) for k in k_cpts]}
+
+################################################################################
+# Define a training function.
 ################################################################################
 
 def state_tensors(net):
@@ -26,11 +181,7 @@ def state_tensors(net):
             **{(ℓ, 'p_cor'): ℓ.p_ev * ℓ.δ_cor for ℓ in net.leaves},
             **{(ℓ, 'p_inc'): ℓ.p_ev * (1 - ℓ.δ_cor) for ℓ in net.leaves}}
 
-################################################################################
-# Define a training function.
-################################################################################
-
-def train(dst, dataset, net):
+def train(dst, net):
     net_state = state_tensors(net)
     for t in range(n_epochs):
         set_tr = [('tr', b) for b in dataset.training_batches(batch_size)]
@@ -49,24 +200,13 @@ def train(dst, dataset, net):
     write_net(dst, net)
 
 ################################################################################
-# Parse command-line arguments.
-################################################################################
-
-parser = ArgumentParser(description=__doc__)
-parser.add_argument('target', help='the type of network to train',
-                    choices=exp_specs.keys())
-
-args = parser.parse_args()
-
-################################################################################
 # Train networks.
 ################################################################################
 
-dataset = exp_specs[args.target].dataset()
-for i, net_constr in enumerate(exp_specs[args.target].nets):
+for i, net_constr in enumerate(net_constr_lists[args.net_type]):
     with tf.Graph().as_default():
         sess = tf.Session()
         with sess.as_default():
             net = net_constr()
             tf.initialize_all_variables().run()
-            train('nets/%s/net%i.npy' % (args.target, i), dataset, net)
+            train(join(args.net_path, '%.4i.npy' % i), net)

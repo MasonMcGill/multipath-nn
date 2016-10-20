@@ -3,18 +3,34 @@
 Measure network performance statistics.
 '''
 from argparse import ArgumentParser
-from json import dumps
-from os import makedirs
-from os.path import isfile
+from os import listdir, makedirs
+from os.path import join
 
+import numpy as np
 import tensorflow as tf
 
-from exp.dr_cifar import exp_specs
+from lib.data import Dataset
 from lib.desc import net_desc
 from lib.serdes import read_net
 
 ################################################################################
-# Define network statistics.
+# Parse command-line arguments.
+################################################################################
+
+parser = ArgumentParser(description=__doc__)
+parser.add_argument('net_path', help='the network type to analyze')
+parser.add_argument('data_path', help='the dataset to use')
+parser.add_argument('stats_path', help='the output destination')
+args = parser.parse_args()
+
+################################################################################
+# Load the dataset.
+################################################################################
+
+dataset = Dataset(args.data_path)
+
+################################################################################
+# Measure network statistics.
 ################################################################################
 
 def p_cor_by_cls(net, ℓ):
@@ -34,31 +50,11 @@ def state_tensors(net):
             **{(ℓ, 'c_err_cor'): ℓ.c_err_cor for ℓ in net.leaves
                if hasattr(ℓ, 'c_err_cor')}}
 
-################################################################################
-# Parse command-line arguments.
-################################################################################
-
-parser = ArgumentParser(description=__doc__)
-parser.add_argument('target', help='the network type to analyze',
-                    choices=exp_specs.keys())
-
-args = parser.parse_args()
-
-################################################################################
-# Train networks.
-################################################################################
-
-dataset = exp_specs[args.target].dataset()
-log = []
-
-for i in range(len(exp_specs[args.target].nets)):
-    if isfile('nets/%s/net%i.tfn' % (args.target, i)):
-        with tf.Graph().as_default():
-            sess = tf.Session()
-            with sess.as_default():
-                net = read_net('nets/%s/net%i.npy' % (args.target, i))
-                log.append(net_desc(net, dataset, {}, state_tensors(net)))
-
-makedirs('stats', exist_ok=True)
-with open('stats/%s.json' % args.target, 'w') as f:
-    f.write(dumps(log, indent=2))
+for net_name in sorted(listdir(args.net_path)):
+    with tf.Graph().as_default():
+        sess = tf.Session()
+        with sess.as_default():
+            net = read_net(join(args.net_path, net_name))
+            desc = net_desc(net, dataset, {}, state_tensors(net))
+            makedirs(args.stats_path, exist_ok=True)
+            np.save(join(args.stats_path, net_name), desc)
