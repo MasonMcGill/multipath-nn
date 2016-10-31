@@ -1,7 +1,7 @@
+from multiprocessing import Array, Lock, Process, Value
 from os import listdir
 from os.path import join
-from queue import Queue
-from threading import Thread
+from time import sleep
 from types import SimpleNamespace as Ns
 
 import cv2
@@ -24,61 +24,72 @@ def batches(x0, y, n):
 # Datasets
 ################################################################################
 
+def sample_buf(n, x0_shape, y_shape):
+    x0_mem = Array('f', n * int(np.prod(x0_shape)), lock=False)
+    y_mem = Array('f', n * int(np.prod(y_shape)), lock=False)
+    return Ns(x0=np.reshape(np.frombuffer(x0_mem, 'f'), (n, *x0_shape)),
+              y=np.reshape(np.frombuffer(y_mem, 'f'), (n, *y_shape)),
+              i_start=Value('i', 0, lock=False),
+              n_loaded=Value('i', 0, lock=False),
+              n_loading=Value('i', 0, lock=False),
+              lock=Lock())
+
 class Dataset:
     def __init__(self, path):
         self.path = path
+        self.x0_shape = cv2.imread(join(self.path, 'tr/x0/%.8i.jpg' % 0)).shape
+        self.y_shape = np.load(join(self.path, 'tr/y/%.8i.npy' % 0)).shape
         self.n_pts = {
             mode: len(listdir(join(self.path, mode, 'x0')))
             for mode in ['tr', 'vl', 'ts']}
-        self.task_queue = Queue()
+        self.buf = {
+            mode: sample_buf(512, self.x0_shape, self.y_shape)
+            for mode in ['tr', 'vl', 'ts']}
         def exec_read_loop():
             γ_dec = np.float32((np.arange(256) / 255)**2.2)
             while True:
-                task = self.task_queue.get()
-                task.x0 = np.array([
-                    cv2.LUT(cv2.imread(task.x0_fmt % j), γ_dec)
-                    for j in task.indices])
-                task.y = np.array([
-                    np.load(task.y_fmt % j)
-                    for j in task.indices])
-                self.task_queue.task_done()
-        Thread(target=exec_read_loop).start()
-
-    @property
-    def x0_shape(self):
-        x0_path = join(self.path, 'tr/x0/%.8i.jpg' % 0)
-        return cv2.imread(x0_path).shape
-
-    @property
-    def y_shape(self):
-        y_path = join(self.path, 'tr/y/%.8i.npy' % 0)
-        return np.load(y_path).shape
+                full = True
+                while full:
+                    for mode, buf in self.buf.items():
+                        with buf.lock:
+                            n_fresh = buf.n_loaded.value + buf.n_loading.value
+                            n_slots = len(buf.x0)
+                            if n_fresh < n_slots:
+                                dst_i = (buf.i_start.value + n_fresh) % n_slots
+                                buf.n_loading.value += 1
+                                full = False
+                                break
+                    if full:
+                        sleep(0.001)
+                src_i = rand.randint(0, self.n_pts[mode])
+                x0_path = join(self.path, mode, 'x0', '%.8i.jpg' % src_i)
+                y_path = join(self.path, mode, 'y', '%.8i.npy' % src_i)
+                buf.x0[dst_i] = cv2.LUT(cv2.imread(x0_path), γ_dec)
+                buf.y[dst_i] = np.load(y_path)
+                with buf.lock:
+                    buf.n_loading.value -= 1
+                    buf.n_loaded.value += 1
+        for _ in range(4):
+            Process(target=exec_read_loop).start()
 
     def _batches(self, mode, n_batches, batch_size):
-        n_pts = self.n_pts[mode]
-        task = Ns(x0_fmt=join(self.path, mode, 'x0', '%.8i.jpg'),
-                  y_fmt=join(self.path, mode, 'y', '%.8i.npy'),
-                  indices=rand.randint(0, n_pts, batch_size))
-        self.task_queue.put(task)
+        buf = self.buf[mode]
         for _ in range(n_batches):
-            self.task_queue.join()
-            x0, y = task.x0, task.y
-            task.indices = rand.randint(0, n_pts, batch_size)
-            self.task_queue.put(task)
-            yield x0, y
+            while True:
+                with buf.lock:
+                    n_fresh = buf.n_loaded.value + buf.n_loading.value
+                    if buf.n_loaded.value >= batch_size:
+                        x0_i = buf.x0[buf.i_start.value:][:batch_size]
+                        y_i = buf.y[buf.i_start.value:][:batch_size]
+                        buf.n_loaded.value -= batch_size
+                        buf.i_start.value += batch_size
+                        buf.i_start.value %= len(buf.x0)
+                        break
+                sleep(0.001)
+            yield x0_i, y_i
 
     def _full_set(self, mode, batch_size):
-        n_pts = self.n_pts[mode]
-        task = Ns(x0_fmt=join(self.path, mode, 'x0', '%.8i.jpg'),
-                  y_fmt=join(self.path, mode, 'y', '%.8i.npy'),
-                  indices=range(batch_size))
-        self.task_queue.put(task)
-        for i in range(0, n_pts, batch_size):
-            self.task_queue.join()
-            x0, y = task.x0, task.y
-            task.indices = range(i, i + batch_size)
-            self.task_queue.put(task)
-            yield x0, y
+        pass
 
     def training_batches(self, n_batches, batch_size=128):
         yield from self._batches('tr', n_batches, batch_size)
@@ -87,9 +98,7 @@ class Dataset:
         yield from self._batches('vl', n_batches, batch_size)
 
     def test_batches(self, n_batches, batch_size=128):
-        rand.seed(0)
         yield from self._batches('ts', n_batches, batch_size)
-        rand.seed()
 
     def full_trainin_set(self, batch_size=128):
         yield from self._full_set('tr', batch_size)
