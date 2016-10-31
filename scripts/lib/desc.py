@@ -27,9 +27,11 @@ def layer_desc(ℓ, stats_tr, stats_ts):
             'stats_ts': {k: v for (t, k), v in stats_ts.items() if t == ℓ},
             'sinks': [layer_desc(s, stats_tr, stats_ts) for s in ℓ.sinks]}
 
-def net_desc(net, dataset, hypers={}, state={}):
-    stats_tr = mean_net_state(net, state, dataset.training_batches(), hypers)
-    stats_ts = mean_net_state(net, state, dataset.test_batches(), hypers)
+def net_desc(net, dataset, hypers={}, state={}, n_batches=50):
+    batches_tr = dataset.training_batches(n_batches)
+    batches_ts = dataset.test_batches(n_batches)
+    stats_tr = mean_net_state(net, state, batches_tr, hypers)
+    stats_ts = mean_net_state(net, state, batches_ts, hypers)
     return {'type': type(net).__name__,
             'stats_tr': {k: v for (t, k), v in stats_tr.items() if t == net},
             'stats_ts': {k: v for (t, k), v in stats_ts.items() if t == net},

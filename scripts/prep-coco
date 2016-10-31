@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+'''
+Download and format COCO object detection instances.
+'''
+from json import load
+from os import makedirs
+from os.path import join, splitext
+from shutil import unpack_archive
+from tempfile import TemporaryDirectory
+from urllib.request import urlretrieve
+
+import cv2
+import numpy as np
+import numpy.random as rand
+
+################################################################################
+# Download and unpack COCO.
+################################################################################
+
+def download_and_unpack(name, dst, src):
+    def log_progress(i, chunk_size, file_size):
+        print('\rDownloading %s — %.2f%% complete.'
+              % (name, 100 * i * chunk_size / file_size), end='', flush=True)
+    urlretrieve(src, dst, log_progress)
+    print(80 * '\b \b' + 'Downloading %s — done!' % name)
+    print('\rUnpacking %s...' % name, end='', flush=True)
+    unpack_archive(dst, splitext(dst)[0])
+    print(80 * '\b \b' + 'Unpacking %s — done!' % name)
+
+coco_dir = TemporaryDirectory()
+coco_path = coco_dir.name
+
+download_and_unpack(
+    'COCO training images', join(coco_path, 'train.zip'),
+    'http://msvocds.blob.core.windows.net/coco2014/train2014.zip')
+download_and_unpack(
+    'COCO validation images', join(coco_path, 'val.zip'),
+    'http://msvocds.blob.core.windows.net/coco2014/val2014.zip')
+download_and_unpack(
+    'COCO annotations', join(coco_path, 'ann.zip'),
+    'http://msvocds.blob.core.windows.net/annotations-1-0-3/'
+    'instances_train-val2014.zip')
+
+################################################################################
+# Collect image crops.
+################################################################################
+
+def cls_name(cat):
+    return cat['name']
+
+def sup_name(cat):
+    return cat['supercategory']
+
+def label_maps(cats):
+    cls_names = sorted(set(map(cls_name, cats)))
+    sup_names = sorted(set(map(sup_name, cats)))
+    cls_labels = {
+        cat['id']: np.float32(
+            np.arange(len(cls_names))
+            == cls_names.index(cls_name(cat)))
+        for cat in cats}
+    sup_labels = {
+        cat['id']: np.float32(
+            np.arange(len(sup_names))
+            == sup_names.index(sup_name(cat)))
+        for cat in cats}
+    return cls_labels, sup_labels
+
+def extract_crops(dst, img_src, ann_src, indices=slice(None)):
+    makedirs(join(dst, 'x0'), exist_ok=True)
+    makedirs(join(dst, 'y'), exist_ok=True)
+    makedirs(join(dst, 'y_sup'), exist_ok=True)
+    with open(ann_src, 'r') as f:
+        ann_log = load(f)
+    rand.seed(0); rand.shuffle(ann_log['images'])
+    img_names = {rec['id']: rec['file_name'] for rec in ann_log['images']}
+    img_anns = {rec['id']: [] for rec in ann_log['images']}
+    for ann in ann_log['annotations']:
+        img_anns[ann['image_id']].append(ann)
+    cls_labels, sup_labels = label_maps(ann_log['categories'])
+    i = 0
+    for img_rec in ann_log['images'][indices]:
+        img_id = img_rec['id']
+        img_path = join(img_src, img_names[img_id])
+        img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+        for ann in img_anns[img_id]:
+            cat_id = ann['category_id']
+            v, u, w, h = map(int, ann['bbox'])
+            h1 = 128 * h // max(h, w)
+            w1 = 128 * w // max(h, w)
+            u1 = (128 - h1) // 2
+            v1 = (128 - w1) // 2
+            if w > 31 and h > 31 and w1 > 0 and h1 > 0:
+                crop = np.zeros((128, 128, 3), np.uint8)
+                crop[u1:u1+h1, v1:v1+w1] = cv2.resize(
+                    img[u:u+h, v:v+w], (w1, h1))
+                cv2.imwrite(join(dst, 'x0', '%.8i.jpg' % i), crop)
+                np.save(join(dst, 'y', '%.8i.npy' % i), cls_labels[cat_id])
+                np.save(join(dst, 'y_sup', '%.8i.npy' % i), sup_labels[cat_id])
+                i += 1
+
+def extract_meta(dst, src):
+    with open(src, 'r') as f:
+        cats = load(f)['categories']
+    cls_names = sorted(set(map(cls_name, cats)))
+    sup_names = sorted(set(map(sup_name, cats)))
+    np.save(dst, dict(cls_names=cls_names, sup_names=sup_names))
+
+print('\rCollecting training set crops...', end='', flush=True)
+extract_crops(
+    'data/coco/tr',
+    join(coco_path, 'train/train2014'),
+    join(coco_path, 'ann/annotations/instances_train2014.json'),
+    slice(2000, None))
+print(80 * '\b \b' + 'Collecting training set crops — done!')
+
+print('\rCollecting validation set crops...', end='', flush=True)
+extract_crops(
+    'data/coco/vl',
+    join(coco_path, 'train/train2014'),
+    join(coco_path, 'ann/annotations/instances_train2014.json'),
+    slice(None, 2000))
+print(80 * '\b \b' + 'Collecting validation set crops — done!')
+
+print('\rCollecting test set crops...', end='', flush=True)
+extract_crops(
+    'data/coco/ts',
+    join(coco_path, 'val/val2014'),
+    join(coco_path, 'ann/annotations/instances_val2014.json'))
+print(80 * '\b \b' + 'Collecting test set crops — done!')
+
+print('\rExtracting metadata...', end='', flush=True)
+extract_meta(
+    'data/coco/meta.npy',
+    join(coco_path, 'ann/annotations/instances_val2014.json'))
+print(80 * '\b \b' + 'Extracting metadata — done!')

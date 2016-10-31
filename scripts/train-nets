@@ -6,9 +6,10 @@ from argparse import ArgumentParser
 from collections import namedtuple
 from os import makedirs
 from os.path import dirname, join
-from random import shuffle
+from sys import maxsize
 
 import numpy as np
+import numpy.random as rand
 import tensorflow as tf
 
 from lib.data import Dataset
@@ -28,7 +29,7 @@ router_n_chan = 16
 
 k_cpts = [0.0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8]
 k_l2 = 1e-3
-σ_w = 1e-2
+σ_w = 1
 
 TFSpec = namedtuple(
     'TransformSpec',
@@ -36,16 +37,16 @@ TFSpec = namedtuple(
     'n_chan shape0_out')
 
 tf_specs = [
-    TFSpec((32, 32), 4, 32, (32, 32)),
+    TFSpec((128, 128), 6, 8, (128, 128)),
+    TFSpec((128, 128), 5, 8, (64, 64)),
+    TFSpec((64, 64), 5, 16, (64, 64)),
+    TFSpec((64, 64), 4, 16, (32, 32)),
     TFSpec((32, 32), 4, 32, (32, 32)),
     TFSpec((32, 32), 3, 32, (16, 16)),
     TFSpec((16, 16), 3, 64, (16, 16)),
-    TFSpec((16, 16), 3, 64, (16, 16)),
     TFSpec((16, 16), 2, 64, (8, 8)),
     TFSpec((8, 8), 2, 128, (8, 8)),
-    TFSpec((8, 8), 2, 128, (8, 8)),
     TFSpec((8, 8), 1, 128, (4, 4)),
-    TFSpec((4, 4), 1, 256, (4, 4)),
     TFSpec((4, 4), 1, 256, (4, 4)),
     TFSpec((4, 4), 1, 256, (4, 4))]
 
@@ -53,11 +54,11 @@ tf_specs = [
 # Define training hyperparameters.
 ################################################################################
 
-n_vl = 1280
-
 n_epochs = 25
-logging_period = 5
+epoch_size = 1000
 batch_size = 128
+
+p_vl = 0.01
 
 λ_lrn_0 = 0.001
 t_anneal = 5
@@ -77,7 +78,7 @@ args = parser.parse_args()
 # Load the dataset.
 ################################################################################
 
-dataset = Dataset(args.data_path, n_vl * args.use_em)
+dataset = Dataset(args.data_path)
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
 
@@ -165,8 +166,10 @@ def dr_tree(type_, k_cpt=0.0):
                             rcm(3, reg())))))))
 
 net_constr_lists = {
-    'sr-chains': [sr_chain(n) for n in range(len(tf_specs) + 1)],
+    # 'sr-chains': [sr_chain(n) for n in range(len(tf_specs) + 1)],
+    'sr-chains': [sr_chain(n) for n in range(len(tf_specs) + 1)][-1:],
     'ds-chains': [dr_chain(DSNet, k) for k in k_cpts],
+    # 'ds-chains': [dr_chain(DSNet, k) for k in k_cpts][1:],
     'cr-chains': [dr_chain(CRNet, k) for k in k_cpts],
     'ds-trees': [dr_tree(DSNet, k) for k in k_cpts],
     'cr-trees': [dr_tree(CRNet, k) for k in k_cpts]}
@@ -184,18 +187,20 @@ def state_tensors(net):
 def train(dst, net):
     net_state = state_tensors(net)
     for t in range(n_epochs):
-        set_tr = [('tr', b) for b in dataset.training_batches(batch_size)]
-        set_vl = [('vl', b) for b in dataset.validation_batches(batch_size)]
-        batches = set_tr + set_vl
-        shuffle(batches)
-        for mode, (x0, y) in batches:
-            op = net.validate if mode == 'vl' else net.train
-            op.run({net.x0: x0, net.y: y, net.mode: mode,
-                    net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)})
-        if (t + 1) % logging_period == 0:
-            print(render_net_desc(
-                net_desc(net, dataset, {}, net_state),
-                '%s — Epoch %i' % (dst, t + 1)))
+        batches_tr = dataset.training_batches(epoch_size, batch_size)
+        batches_vl = dataset.validation_batches(maxsize, batch_size)
+        for x0, y in batches_tr:
+            net.train.run({
+                net.x0: x0, net.y: y, net.mode: 'tr',
+                net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)})
+            if args.use_em and rand.rand() < p_vl:
+                x0, y = next(batches_vl)
+                net.validate.run({
+                    net.x0: x0, net.y: y,
+                    net.mode: 'vl'})
+        print(render_net_desc(
+            net_desc(net, dataset, {}, net_state),
+            '%s — Epoch %i' % (dst, t + 1)))
     makedirs(dirname(dst), exist_ok=True)
     write_net(dst, net)
 
