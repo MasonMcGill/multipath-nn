@@ -105,7 +105,7 @@ class GlobalMaxPool(Layer):
 
 def to_pyramid(x, n_scales):
     h, w = x.get_shape().as_list()[1:3]
-    return [tf.image.resize_images(x, h // 2**i, w // 2**i)
+    return [tf.image.resize_images(x, (h // 2**i, w // 2**i))
             for i in range(n_scales)]
 
 def pack_pyramid(x):
