@@ -28,7 +28,7 @@ conv_supp = 3
 router_n_chan = 16
 
 k_cpts = [0.0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8]
-k_l2 = 1e-3
+k_l2 = 1e-4
 σ_w = 1
 
 TFSpec = namedtuple(
@@ -37,10 +37,6 @@ TFSpec = namedtuple(
     'n_chan shape0_out')
 
 tf_specs = [
-    TFSpec((128, 128), 6, 8, (128, 128)),
-    TFSpec((128, 128), 5, 8, (64, 64)),
-    TFSpec((64, 64), 5, 16, (64, 64)),
-    TFSpec((64, 64), 4, 16, (32, 32)),
     TFSpec((32, 32), 4, 32, (32, 32)),
     TFSpec((32, 32), 3, 32, (16, 16)),
     TFSpec((16, 16), 3, 64, (16, 16)),
@@ -54,14 +50,15 @@ tf_specs = [
 # Define training hyperparameters.
 ################################################################################
 
-n_epochs = 25
-epoch_size = 1000
+n_epochs = 10
+epoch_size = 2500
 batch_size = 128
 
+n_vl = 1280
 p_vl = 0.01
 
-λ_lrn_0 = 0.001
-t_anneal = 5
+λ_lrn_0 = 0.1
+t_anneal = 1
 
 ################################################################################
 # Parse command-line arguments.
@@ -78,7 +75,7 @@ args = parser.parse_args()
 # Load the dataset.
 ################################################################################
 
-dataset = Dataset(args.data_path)
+dataset = Dataset(args.data_path, n_vl)
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
 
@@ -166,10 +163,8 @@ def dr_tree(type_, k_cpt=0.0):
                             rcm(3, reg())))))))
 
 net_constr_lists = {
-    # 'sr-chains': [sr_chain(n) for n in range(len(tf_specs) + 1)],
-    'sr-chains': [sr_chain(n) for n in range(len(tf_specs) + 1)][-1:],
+    'sr-chains': [sr_chain(n) for n in range(len(tf_specs) + 1)],
     'ds-chains': [dr_chain(DSNet, k) for k in k_cpts],
-    # 'ds-chains': [dr_chain(DSNet, k) for k in k_cpts][1:],
     'cr-chains': [dr_chain(CRNet, k) for k in k_cpts],
     'ds-trees': [dr_tree(DSNet, k) for k in k_cpts],
     'cr-trees': [dr_tree(CRNet, k) for k in k_cpts]}
@@ -187,14 +182,13 @@ def state_tensors(net):
 def train(dst, net):
     net_state = state_tensors(net)
     for t in range(n_epochs):
-        batches_tr = dataset.training_batches(epoch_size, batch_size)
-        batches_vl = dataset.validation_batches(maxsize, batch_size)
-        for x0, y in batches_tr:
+        for _ in range(epoch_size):
+            x0, y = dataset.augmented_training_batch()
             net.train.run({
                 net.x0: x0, net.y: y, net.mode: 'tr',
                 net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)})
             if args.use_em and rand.rand() < p_vl:
-                x0, y = next(batches_vl)
+                x0, y = dataset.validation_batch()
                 net.validate.run({
                     net.x0: x0, net.y: y,
                     net.mode: 'vl'})
