@@ -141,10 +141,12 @@ class DSNet(Net):
         ϕ = self.hypers
         self.λ_lrn = tf.placeholder_with_default(ϕ.λ_lrn, ())
         self.μ_lrn = tf.placeholder_with_default(ϕ.μ_lrn, ())
+        self.ϵ = tf.placeholder_with_default(ϕ.ϵ, ())
+        self.τ = tf.placeholder_with_default(ϕ.τ, ())
         n_pts = tf.shape(self.x0)[0]
         add_error_mapping(self)
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
-                 Ns(mode=self.mode, **vars(ϕ)))
+                 Ns(ϵ=self.ϵ, τ=self.τ))
         c_err = sum(ℓ.p_tr * ℓ.c_err_cor for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * ϕ.k_cpt * ℓ.n_ops for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
@@ -213,10 +215,12 @@ class CRNet(Net):
         ϕ = self.hypers
         self.λ_lrn = tf.placeholder_with_default(ϕ.λ_lrn, ())
         self.μ_lrn = tf.placeholder_with_default(ϕ.μ_lrn, ())
+        self.ϵ = tf.placeholder_with_default(ϕ.ϵ, ())
+        self.τ = tf.placeholder_with_default(ϕ.τ, ())
         n_pts = tf.shape(self.x0)[0]
         add_error_mapping(self)
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
-                 Ns(mode=self.mode, **vars(ϕ)))
+                 Ns(ϵ=self.ϵ, τ=self.τ))
         c_err = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_err_cor for ℓ in self.layers)
         c_cre = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_cre for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
