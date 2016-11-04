@@ -17,11 +17,11 @@ def params_list_rec(ℓ):
         for c in getattr(ℓ, 'comps', []):
             yield from params_list_rec(c)
 
-def minimize_expected(net, cost, optimizer, router_lr_scale=1):
+def minimize_expected(net, cost, optimizer, α_rtr=1):
     lr_scales = {
         **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
            for ℓ in net.layers for θ in params_list_rec(ℓ)},
-        **{θ: 1 / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr))) * router_lr_scale
+        **{θ: α_rtr / tf.sqrt(tf.reduce_mean(tf.square(ℓ.p_tr)))
            for ℓ in net.layers for θ in params_list_rec(ℓ.router)}}
     grads = optimizer.compute_gradients(cost)
     scaled_grads = [(lr_scales[θ] * g, θ) for g, θ in grads if g is not None]
@@ -134,7 +134,7 @@ def route_ds(ℓ, p_tr, p_ev, opts):
 class DSNet(Net):
     default_hypers = Ns(
         k_cpt=0.0, ϵ=0.1, τ=1.0, λ_em=0.9,
-        λ_lrn=1e-3, μ_lrn=0.9)
+        λ_lrn=1e-3, μ_lrn=0.9, α_rtr=1.0)
 
     def link(self):
         super().link()
@@ -154,7 +154,8 @@ class DSNet(Net):
         c_tr = c_err + c_cpt + c_mod
         opt = tf.train.MomentumOptimizer(self.λ_lrn, self.μ_lrn)
         with tf.control_dependencies([ℓ.update_μ_tr for ℓ in self.layers]):
-            self.train = minimize_expected(self, tf.reduce_mean(c_tr), opt)
+            self.train = minimize_expected(
+                self, tf.reduce_mean(c_tr), opt, ϕ.α_rtr)
         self.validate = tf.group(*(ℓ.update_μ_vl for ℓ in self.layers))
 
 ################################################################################
@@ -208,7 +209,7 @@ class CRNet(Net):
     default_hypers = Ns(
         k_cpt=0.0, k_cre=0.01, ϵ=0.1, τ=1.0,
         λ_em=0.9, λ_lrn=1e-3, μ_lrn=0.9,
-        optimistic=True)
+        α_rtr=1.0, optimistic=True)
 
     def link(self):
         super().link()
@@ -229,5 +230,5 @@ class CRNet(Net):
         opt = tf.train.MomentumOptimizer(ϕ.λ_lrn, ϕ.μ_lrn)
         with tf.control_dependencies([ℓ.update_μ_tr for ℓ in self.layers]):
             self.train = minimize_expected(
-                self, tf.reduce_mean(c_tr), opt, 1 / ϕ.k_cre)
+                self, tf.reduce_mean(c_tr), opt, ϕ.α_rtr)
         self.validate = tf.group(*(ℓ.update_μ_vl for ℓ in self.layers))
