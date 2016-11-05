@@ -165,7 +165,6 @@ class MultiscaleConvMax(Layer):
         super().link(x, y, mode)
         ϕ, θ = self.hypers, self.params
         n_in = x.get_shape()[2].value
-        n_pix = x.get_shape()[1].value
         w_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
         w_scale = ϕ.σ_w / ϕ.supp / np.sqrt(n_in)
         w_ident = np.float32(
@@ -179,17 +178,22 @@ class MultiscaleConvMax(Layer):
         s_in = unpack_pyramid(x, ϕ.shape0)
         s_pool = [
             tf.nn.max_pool(s, (1, 2, 2, 1), (1, 2, 2, 1), 'SAME')
-            for s in s_in]
+            for s in s_in[:-1]]
         s_out = [
-            tf.nn.conv2d(s_in[0], θ.w_horz, (1, 1, 1, 1), 'SAME') + θ.b,
-            *(tf.nn.conv2d(s_in[i], θ.w_horz, (1, 1, 1, 1), 'SAME') + θ.b
-              + tf.nn.conv2d(s_pool[i-1], θ.w_vert, (1, 1, 1, 1), 'SAME')
-              for i in range(1, len(s_in)))][-ϕ.n_scales:]
+            θ.b + tf.nn.conv2d(s_in[i], θ.w_horz, (1, 1, 1, 1), 'SAME')
+            + (tf.nn.conv2d(s_pool[i], θ.w_vert, (1, 1, 1, 1), 'SAME')
+               if -i <= len(s_pool) else 0)
+            for i in range(-ϕ.n_scales, 0)]
         self.x = pack_pyramid(s_out)
         self.c_mod = ϕ.k_l2 * (
             tf.reduce_sum(tf.square(θ.w_horz - w_eq)) +
             tf.reduce_sum(tf.square(θ.w_vert)))
-        self.n_ops = n_pix * ϕ.supp**2 * n_in * ϕ.n_chan
+        self.n_ops_per_scale = [
+            ϕ.n_chan * ϕ.supp**2
+            * np.prod(s_in[i].get_shape().as_list()[1:])
+            * (1 + int(-i <= len(s_pool)))
+            for i in range(-ϕ.n_scales, 0)]
+        self.n_ops = sum(self.n_ops_per_scale)
 
 class SelectPyramidTop(Layer):
     default_hypers = Ns(shape=(1, 1))
