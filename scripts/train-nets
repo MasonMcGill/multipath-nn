@@ -18,6 +18,7 @@ from lib.layer_types import (
     BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
     SelectPyramidTop, Softmax, CrossEntropyError, ToPyramid)
 from lib.net_types import CRNet, DSNet, SRNet
+from lib.op_counting import lazify_op_counts
 from lib.serdes import write_net
 
 ################################################################################
@@ -38,12 +39,12 @@ TFSpec = namedtuple(
 
 tf_specs = [
     TFSpec((32, 32), 4, 32, (32, 32)),
+    TFSpec((32, 32), 4, 32, (32, 32)),
     TFSpec((32, 32), 3, 32, (16, 16)),
     TFSpec((16, 16), 3, 64, (16, 16)),
     TFSpec((16, 16), 2, 64, (8, 8)),
     TFSpec((8, 8), 2, 128, (8, 8)),
     TFSpec((8, 8), 1, 128, (4, 4)),
-    TFSpec((4, 4), 1, 256, (4, 4)),
     TFSpec((4, 4), 1, 256, (4, 4))]
 
 ################################################################################
@@ -207,5 +208,6 @@ for i, net_constr in enumerate(net_constr_lists[args.net_type]):
         sess = tf.Session()
         with sess.as_default():
             net = net_constr()
+            lazify_op_counts(net.root)
             tf.initialize_all_variables().run()
             train(join(args.net_path, '%.4i.npy' % i), net)

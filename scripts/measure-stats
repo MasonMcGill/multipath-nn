@@ -11,6 +11,7 @@ import tensorflow as tf
 
 from lib.data import Dataset
 from lib.desc import net_desc
+from lib.op_counting import lazify_op_counts
 from lib.serdes import read_net
 
 ################################################################################
@@ -55,6 +56,7 @@ for net_name in sorted(listdir(args.net_path)):
         sess = tf.Session()
         with sess.as_default():
             net = read_net(join(args.net_path, net_name))
+            lazify_op_counts(net.root)
             desc = net_desc(net, dataset, {}, state_tensors(net))
             makedirs(args.stats_path, exist_ok=True)
             np.save(join(args.stats_path, net_name), desc)
