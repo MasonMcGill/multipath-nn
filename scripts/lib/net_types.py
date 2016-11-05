@@ -221,7 +221,8 @@ class CRNet(Net):
         n_pts = tf.shape(self.x0)[0]
         add_error_mapping(self)
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
-                 Ns(ϵ=self.ϵ, τ=self.τ))
+                 Ns(ϵ=self.ϵ, τ=self.τ, k_cpt=ϕ.k_cpt, k_cre=ϕ.k_cre,
+                    optimistic=ϕ.optimistic))
         c_err = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_err_cor for ℓ in self.layers)
         c_cre = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_cre for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
