@@ -150,7 +150,7 @@ def route_ds(ℓ, p_tr, p_ev, opts):
 class DSNet(Net):
     default_hypers = Ns(
         k_cpt=0.0, ϵ=0.1, τ=1.0, λ_em=0.9,
-        λ_lrn=1e-3, μ_lrn=0.9, α_rtr=1.0)
+        λ_lrn=1e-3, μ_lrn=0.9, α_rtr=0.1)
 
     def link(self):
         super().link()
@@ -227,9 +227,9 @@ def route_cr(ℓ, p_tr, p_ev, opts):
 
 class CRNet(Net):
     default_hypers = Ns(
-        k_cpt=0.0, k_cre=0.01, ϵ=0.1, τ=1.0,
+        k_cpt=0.0, k_cre=0.01, ϵ=0.1, τ=0.2,
         λ_em=0.9, λ_lrn=1e-3, μ_lrn=0.9,
-        α_rtr=1.0, optimistic=True)
+        α_rtr=10.0, optimistic=True)
 
     def link(self):
         super().link()
