@@ -175,8 +175,9 @@ net_constr_lists = {
 ################################################################################
 
 def state_tensors(net):
+    tot_n_ops = lambda ℓ: ℓ.n_ops + getattr(ℓ.router, 'n_ops', 0)
     return {(net, 'acc'): sum(ℓ.p_ev * ℓ.δ_cor for ℓ in net.leaves),
-            (net, 'moc'): sum(ℓ.p_ev * ℓ.n_ops for ℓ in net.layers),
+            (net, 'moc'): sum(ℓ.p_ev * tot_n_ops(ℓ) for ℓ in net.layers),
             **{(ℓ, 'p_cor'): ℓ.p_ev * ℓ.δ_cor for ℓ in net.leaves},
             **{(ℓ, 'p_inc'): ℓ.p_ev * (1 - ℓ.δ_cor) for ℓ in net.leaves}}
 
