@@ -164,7 +164,8 @@ class DSNet(Net):
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Ns(ϵ=self.ϵ, τ=self.τ))
         c_err = sum(ℓ.p_tr * ℓ.c_err_cor for ℓ in self.layers)
-        c_cpt = sum(ℓ.p_tr * ϕ.k_cpt * ℓ.n_ops for ℓ in self.layers)
+        c_cpt = sum(ℓ.p_tr * ϕ.k_cpt * (ℓ.n_ops + getattr(ℓ.router, 'n_ops', 0))
+                    for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
                     for ℓ in self.switches)
         c_tr = c_err + c_cpt + c_mod
@@ -205,12 +206,12 @@ def route_sinks_cr_dyn(ℓ, opts):
         route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
     ℓ.c_ev = (
         1 - getattr(ℓ, 'δ_cor_cor', 1)
-        + opts.k_cpt * ℓ.n_ops
+        + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
         + sum(π_ev[:, i] * s.c_ev
               for i, s in enumerate(ℓ.sinks)))
     ℓ.c_opt = (
         1 - getattr(ℓ, 'δ_cor_cor', 1)
-        + opts.k_cpt * ℓ.n_ops
+        + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
         + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
     ℓ.c_cre = (
         opts.k_cre * sum(
