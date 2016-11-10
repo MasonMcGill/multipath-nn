@@ -115,7 +115,7 @@ class SRNet(Net):
         self.λ_lrn = tf.placeholder_with_default(ϕ.λ_lrn, ())
         self.μ_lrn = tf.placeholder_with_default(ϕ.μ_lrn, ())
         for ℓ in self.layers:
-            ℓ.p_ev = tf.ones((tf.shape(ℓ.x)[0],))
+            ℓ.p_ev = tf.ones((tf.shape(self.x0)[0],))
         c_tr = sum(ℓ.c_err + ℓ.c_mod for ℓ in self.layers)
         opt = tf.train.MomentumOptimizer(self.λ_lrn, self.μ_lrn)
         self.train = opt.minimize(tf.reduce_mean(c_tr))

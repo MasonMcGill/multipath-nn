@@ -15,8 +15,10 @@ import tensorflow as tf
 from lib.data import Dataset
 from lib.desc import net_desc, render_net_desc
 from lib.layer_types import (
-    BatchNorm, Chain, LinTrans, MultiscaleConvMax, MultiscaleLLN, Rect,
-    SelectPyramidTop, Softmax, CrossEntropyError, ToPyramid)
+    BatchNorm, Chain, LinTrans, MultiscaleBatchNorm, MultiscaleConvMax,
+    MultiscaleConvMaxDS, MultiscaleLLN, MultiscaleRect, Rect,
+    Select, Softmax, CrossEntropyError, ToPyramid)
+
 from lib.net_types import CRNet, DSNet, SRNet
 from lib.op_counting import lazify_op_counts
 from lib.serdes import write_net
@@ -28,38 +30,38 @@ from lib.serdes import write_net
 conv_supp = 3
 router_n_chan = 16
 
-k_cpts = [0.0, 4e-9, 8e-9, 1.2e-8, 1.6e-8, 2e-8]
+k_cpts = [0.0, 1e-8, 2e-8, 4e-8, 8e-8]
 k_l2 = 1e-4
 σ_w = 1
 
 TFSpec = namedtuple(
     'TransformSpec',
-    'shape0_in n_scales '
-    'n_chan shape0_out')
+    'type n_chan')
 
+n_scales = 4
 tf_specs = [
-    TFSpec((32, 32), 4, 32, (32, 32)),
-    TFSpec((32, 32), 4, 32, (32, 32)),
-    TFSpec((32, 32), 3, 32, (16, 16)),
-    TFSpec((16, 16), 3, 64, (16, 16)),
-    TFSpec((16, 16), 2, 64, (8, 8)),
-    TFSpec((8, 8), 2, 128, (8, 8)),
-    TFSpec((8, 8), 1, 128, (4, 4)),
-    TFSpec((4, 4), 1, 256, (4, 4))]
+    TFSpec(MultiscaleConvMax, 8),
+    TFSpec(MultiscaleConvMax, 8),
+    TFSpec(MultiscaleConvMaxDS, 16),
+    TFSpec(MultiscaleConvMax, 16),
+    TFSpec(MultiscaleConvMaxDS, 32),
+    TFSpec(MultiscaleConvMax, 32),
+    TFSpec(MultiscaleConvMaxDS, 64),
+    TFSpec(MultiscaleConvMax, 64)]
 
 ################################################################################
 # Define training hyperparameters.
 ################################################################################
 
-n_epochs = 10
-epoch_size = 2500
-batch_size = 128
+n_iter = 60000
+t_log = 2500
+batch_size = 256
 
 n_vl = 1280
 p_vl = 0.01
 
 λ_lrn_0 = 0.1
-t_anneal = 1
+t_anneal = 5000
 
 ################################################################################
 # Parse command-line arguments.
@@ -86,30 +88,28 @@ y_shape = dataset.y_shape
 
 def router(n_sinks):
     return Chain(name='Router', comps=[
-        SelectPyramidTop(shape=tf_specs[-1].shape0_out),
-        LinTrans(n_chan=router_n_chan, k_l2=k_l2, σ_w=σ_w),
+        Select(i=-1), LinTrans(n_chan=router_n_chan, k_l2=k_l2, σ_w=σ_w),
         BatchNorm(), Rect(), LinTrans(n_chan=n_sinks, k_l2=k_l2)])
 
 def pyr(*sinks):
     return Chain(
         name='ToPyramidLLN', sinks=sinks,
         router=router(len(sinks)), comps=[
-            ToPyramid(n_scales=tf_specs[0].n_scales),
-            MultiscaleLLN(shape0=tf_specs[0].shape0_in),
-            BatchNorm()])
+            ToPyramid(n_scales=n_scales),
+            MultiscaleLLN(), MultiscaleBatchNorm()])
 
 def rcm(i, *sinks):
     return Chain(
         name='ReConvMax', sinks=sinks,
         router=router(len(sinks)), comps=[
-            MultiscaleConvMax(
-                shape0=tf_specs[i].shape0_in, n_scales=tf_specs[i].n_scales,
-                n_chan=tf_specs[i].n_chan, supp=conv_supp, k_l2=k_l2, σ_w=σ_w),
-            BatchNorm(), Rect()])
+            tf_specs[i].type(
+                n_chan=tf_specs[i].n_chan,
+                supp=conv_supp, k_l2=k_l2, σ_w=σ_w),
+            MultiscaleBatchNorm(), MultiscaleRect()])
 
 def reg():
     return Chain(name='LogReg', comps=[
-        SelectPyramidTop(shape=tf_specs[-1].shape0_out),
+        Select(i=-1),
         LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=σ_w),
         Softmax(), CrossEntropyError()])
 
@@ -182,22 +182,24 @@ def state_tensors(net):
 
 def train(dst, net):
     net_state = state_tensors(net)
-    for t in range(n_epochs):
-        for _ in range(epoch_size):
-            x0, y = dataset.augmented_training_batch()
-            net.train.run({
-                net.x0: x0, net.y: y, net.mode: 'tr',
-                net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)})
-            if args.use_em and rand.rand() < p_vl:
-                x0, y = dataset.validation_batch()
-                net.validate.run({
-                    net.x0: x0, net.y: y,
-                    net.mode: 'vl'})
-        print(render_net_desc(
-            net_desc(net, dataset, {}, net_state),
-            '%s — Epoch %i' % (dst, t + 1)))
-    makedirs(dirname(dst), exist_ok=True)
-    write_net(dst, net)
+    for t in range(n_iter):
+        x0, y = dataset.augmented_training_batch()
+        print('  --- Iteration %i ---\r' % (t + 1),
+              end='', flush=True)
+        net.train.run({
+            net.x0: x0, net.y: y, net.mode: 'tr',
+            net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)})
+        if args.use_em and rand.rand() < p_vl:
+            x0, y = dataset.validation_batch()
+            net.validate.run({
+                net.x0: x0, net.y: y,
+                net.mode: 'vl'})
+        if (t + 1) % t_log == 0:
+            print(render_net_desc(
+                net_desc(net, dataset, {}, net_state),
+                '%s — Epoch %i' % (dst, t + 1)))
+            makedirs(dirname(dst), exist_ok=True)
+            write_net(dst, net)
 
 ################################################################################
 # Train networks.
@@ -205,9 +207,9 @@ def train(dst, net):
 
 for i, net_constr in enumerate(net_constr_lists[args.net_type]):
     with tf.Graph().as_default():
-        sess = tf.Session()
+        sess = tf.Session(config=tf.ConfigProto(
+            gpu_options=tf.GPUOptions(allow_growth=True)))
         with sess.as_default():
             net = net_constr()
-            lazify_op_counts(net.root)
             tf.initialize_all_variables().run()
             train(join(args.net_path, '%.4i.npy' % i), net)

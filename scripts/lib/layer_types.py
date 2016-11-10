@@ -103,35 +103,26 @@ class GlobalMaxPool(Layer):
 # Multiscale Transformation Layers
 ################################################################################
 
-def to_pyramid(x, n_scales):
-    h, w = x.get_shape().as_list()[1:3]
-    return [tf.image.resize_images(x, (h // 2**i, w // 2**i))
-            for i in range(n_scales)]
+def conv(x, k):
+    return tf.nn.conv2d(x, k, (1, 1, 1, 1), 'SAME')
 
-def pack_pyramid(x):
-    n_chan = x[0].get_shape()[3].value
-    return tf.concat(1, [
-        tf.reshape(x_i, (-1, np.prod(x_i.get_shape().as_list()[1:3]), n_chan))
-        for x_i in x])
+def pool(x):
+    return tf.nn.max_pool(x, (1, 2, 2, 1), (1, 2, 2, 1), 'SAME')
 
-def unpack_pyramid(x, shape0):
-    n_pix, n_chan = x.get_shape().as_list()[1:]
-    h, w = shape0
-    x_unpacked = []
-    i = 0
-    while i + h * w <= n_pix:
-        x_unpacked.append(tf.reshape(x[:, i:i+h*w, :], (-1, h, w, n_chan)))
-        i += h * w
-        h //= 2
-        w //= 2
-    return x_unpacked
+def n_pix(x):
+    return int(np.prod(x.get_shape().as_list()[1:3]))
+
+def n_el(x):
+    return int(np.prod(x.get_shape().as_list()))
 
 class ToPyramid(Layer):
     default_hypers = Ns(n_scales=1)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
-        self.x = pack_pyramid(to_pyramid(x, self.hypers.n_scales))
+        h, w = x.get_shape().as_list()[1:3]
+        self.x = [tf.image.resize_images(x, (h // 2**i, w // 2**i))
+                  for i in range(self.hypers.n_scales)]
 
 class MultiscaleLLN(Layer):
     default_hypers = Ns(shape0=(1, 1), σ=3, ϵ=1e-3)
@@ -144,8 +135,8 @@ class MultiscaleLLN(Layer):
         v = np.linspace(-s, s, 2 * s + 1)[:, None, None]
         k = (np.exp(-(u**2 + v**2) / (2 * ϕ.σ**2)) / (2 * np.pi * ϕ.σ**2)
              * [[0.2989], [0.5870], [0.1140]])
-        x_out_unpacked = []
-        for x_i in unpack_pyramid(x, ϕ.shape0):
+        self.x = []
+        for x_i in x:
             h, w = x_i.get_shape().as_list()[1:3]
             x_i_lum = tf.nn.conv2d(
                 tf.pad(x_i, [[0, 0], [s, s], [s, s], [0, 0]]),
@@ -153,56 +144,106 @@ class MultiscaleLLN(Layer):
             x_i_density = tf.nn.conv2d(
                 tf.pad(tf.ones_like(x_i), [[0, 0], [s, s], [s, s], [0, 0]]),
                 k, (1, 1, 1, 1), 'SAME')[:, s:s+h, s:s+w, :]
-            x_out_unpacked.append(x_i / (x_i_lum / x_i_density + ϕ.ϵ))
-        self.x = pack_pyramid(x_out_unpacked)
+            self.x.append(x_i / (x_i_lum / x_i_density + ϕ.ϵ))
 
 class MultiscaleConvMax(Layer):
-    default_hypers = Ns(
-        shape0=(1, 1), n_scales=1, n_chan=1,
-        supp=1, res=False, k_l2=0, σ_w=1)
+    default_hypers = Ns(n_chan=1, supp=1, k_l2=0, σ_w=1)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
         ϕ, θ = self.hypers, self.params
-        n_in = x.get_shape()[2].value
-        w_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
-        w_scale = ϕ.σ_w / ϕ.supp / np.sqrt(n_in)
-        w_ident = np.float32(
-            (np.arange(ϕ.supp) == ϕ.supp // 2)[:, None, None, None]
-            * (np.arange(ϕ.supp) == ϕ.supp // 2)[:, None, None]
-            * np.eye(n_in, ϕ.n_chan))
-        w_eq = w_ident if ϕ.res else 0
-        θ.w_horz = tf.Variable(w_eq + w_scale * tf.random_normal(w_shape))
-        θ.w_vert = tf.Variable(w_scale * tf.random_normal(w_shape))
-        θ.b = tf.Variable(tf.zeros(ϕ.n_chan))
-        s_in = unpack_pyramid(x, ϕ.shape0)
-        s_pool = [
-            tf.nn.max_pool(s, (1, 2, 2, 1), (1, 2, 2, 1), 'SAME')
-            for s in s_in[:-1]]
-        s_out = [
-            θ.b + tf.nn.conv2d(s_in[i], θ.w_horz, (1, 1, 1, 1), 'SAME')
-            + (tf.nn.conv2d(s_pool[i], θ.w_vert, (1, 1, 1, 1), 'SAME')
-               if -i <= len(s_pool) else 0)
-            for i in range(-ϕ.n_scales, 0)]
-        self.x = pack_pyramid(s_out)
+        n_in = x[0].get_shape()[3].value
+        w_horz_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
+        w_vert_shape = (ϕ.supp, ϕ.supp, ϕ.n_chan, ϕ.n_chan)
+        w_horz_scale = ϕ.σ_w / ϕ.supp / np.sqrt(2 * n_in)
+        w_vert_scale = ϕ.σ_w / ϕ.supp / np.sqrt(2 * ϕ.n_chan)
+        w_horz = [
+            tf.Variable(w_horz_scale * tf.random_normal(w_horz_shape))
+            for _ in range(len(x))]
+        w_vert = [
+            tf.Variable(w_vert_scale * tf.random_normal(w_vert_shape))
+            for _ in range(len(x) - 1)]
+        b = [
+            tf.Variable(tf.zeros(ϕ.n_chan))
+            for _ in range(len(x))]
+        for i, w_i in enumerate(w_horz):
+            setattr(θ, 'w_horz_%i' % i, w_i)
+        for i, w_i in enumerate(w_vert):
+            setattr(θ, 'w_vert_%i' % i, w_i)
+        for i, b_i in enumerate(b):
+            setattr(θ, 'b_%i' % i, b_i)
+        self.x = len(x) * [None]
+        self.x[0] = b[0] + conv(x[0], w_horz[0])
+        for i in range(1, len(self.x)):
+            self.x[i] = (
+                b[i] + conv(x[i], w_horz[i])
+                + conv(pool(self.x[i-1]), w_vert[i-1]))
         self.c_mod = ϕ.k_l2 * (
-            tf.reduce_sum(tf.square(θ.w_horz - w_eq)) +
-            tf.reduce_sum(tf.square(θ.w_vert)))
-        self.n_ops_per_scale = [
-            ϕ.n_chan * ϕ.supp**2
-            * np.prod(s_in[i].get_shape().as_list()[1:])
-            * (1 + int(-i <= len(s_pool)))
-            for i in range(-ϕ.n_scales, 0)]
-        self.n_ops = sum(self.n_ops_per_scale)
+            sum(tf.reduce_sum(tf.square(w)) for w in w_horz) +
+            sum(tf.reduce_sum(tf.square(w)) for w in w_vert))
+        self.n_ops = sum(
+            n_pix(x_i) * (
+                n_el(w_horz[i])
+                + (n_el(w_vert[i-1])
+                   if i > 0 else 0))
+            for i, x_i in enumerate(self.x))
 
-class SelectPyramidTop(Layer):
-    default_hypers = Ns(shape=(1, 1))
+class MultiscaleConvMaxDS(Layer):
+    default_hypers = Ns(n_chan=1, supp=1, k_l2=0, σ_w=1)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
-        h, w = self.hypers.shape
-        n_pix, n_chan = x.get_shape().as_list()[1:]
-        self.x = tf.reshape(x[:, n_pix-h*w:, :], (-1, h, w, n_chan))
+        ϕ, θ = self.hypers, self.params
+        n_in = x[0].get_shape()[3].value
+        w_horz_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
+        w_vert_shape = (ϕ.supp, ϕ.supp, ϕ.n_chan, ϕ.n_chan)
+        w_horz_scale = ϕ.σ_w / ϕ.supp / np.sqrt(2 * n_in)
+        w_vert_scale = ϕ.σ_w / ϕ.supp / np.sqrt(2 * ϕ.n_chan)
+        w_horz = [
+            tf.Variable(w_horz_scale * tf.random_normal(w_horz_shape))
+            for _ in range(len(x) - 1)]
+        w_vert = [
+            tf.Variable(w_vert_scale * tf.random_normal(w_vert_shape))
+            for _ in range(len(x) - 2)]
+        θ.w_diag = tf.Variable(w_horz_scale * tf.random_normal(w_horz_shape))
+        b = [
+            tf.Variable(tf.zeros(ϕ.n_chan))
+            for _ in range(len(x) - 1)]
+        for i, w_i in enumerate(w_horz):
+            setattr(θ, 'w_horz_%i' % i, w_i)
+        for i, w_i in enumerate(w_vert):
+            setattr(θ, 'w_vert_%i' % i, w_i)
+        for i, b_i in enumerate(b):
+            setattr(θ, 'b_%i' % i, b_i)
+        self.x = (len(x) - 1) * [None]
+        self.x[0] = (
+            b[0] + conv(x[1], w_horz[0])
+            + conv(pool(x[0]), θ.w_diag))
+        for i in range(1, len(self.x)):
+            self.x[i] = (
+                b[i] + conv(x[i+1], w_horz[i])
+                + conv(pool(self.x[i-1]), w_vert[i-1]))
+        self.c_mod = ϕ.k_l2 * (
+            sum(tf.reduce_sum(tf.square(w)) for w in w_horz) +
+            sum(tf.reduce_sum(tf.square(w)) for w in w_vert))
+        self.n_ops = sum(
+            n_pix(x_i) * (
+                n_el(w_horz[i])
+                + (n_el(w_vert[i-1]) if i > 0
+                   else n_el(θ.w_diag)))
+            for i, x_i in enumerate(self.x))
+
+class MultiscaleRect(Layer):
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        self.x = list(map(tf.nn.relu, x))
+
+class Select(Layer):
+    default_hypers = Ns(i=0)
+
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        self.x = x[self.hypers.i]
 
 ################################################################################
 # Regularization Layers
@@ -236,6 +277,16 @@ class BatchNorm(Layer):
         def x_ev():
             return θ.γ * (x - θ.m_avg) / tf.sqrt(θ.v_avg + ϕ.ϵ) + θ.β
         self.x = tf.cond(tf.equal(mode, 'tr'), x_tr, x_ev)
+
+class MultiscaleBatchNorm(Layer):
+    default_hypers = Ns(d=0.9, ϵ=1e-6)
+
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        self.comps = [BatchNorm() for _ in x]
+        for ℓ, x_i in zip(self.comps, x):
+            ℓ.link(x_i, y, mode)
+        self.x = [ℓ.x for ℓ in self.comps]
 
 ################################################################################
 # Error Layers
