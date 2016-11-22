@@ -134,7 +134,7 @@ class MultiscaleLLN(Layer):
         u = np.linspace(-s, s, 2 * s + 1)[:, None, None, None]
         v = np.linspace(-s, s, 2 * s + 1)[:, None, None]
         k = (np.exp(-(u**2 + v**2) / (2 * ϕ.σ**2)) / (2 * np.pi * ϕ.σ**2)
-             * [[0.2989], [0.5870], [0.1140]])
+             * [[0.2126], [0.7152], [0.0722]])
         self.x = []
         for x_i in x:
             h, w = x_i.get_shape().as_list()[1:3]
