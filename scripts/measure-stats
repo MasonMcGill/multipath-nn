@@ -12,7 +12,6 @@ import tensorflow as tf
 
 from lib.data import Dataset
 from lib.desc import net_desc
-from lib.op_counting import lazify_op_counts
 from lib.serdes import read_net
 
 ################################################################################

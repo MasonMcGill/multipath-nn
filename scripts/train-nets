@@ -20,7 +20,6 @@ from lib.layer_types import (
     Softmax, ToPyramid)
 
 from lib.net_types import CRNet, DSNet, SRNet
-from lib.op_counting import lazify_op_counts
 from lib.serdes import write_net
 
 ################################################################################
