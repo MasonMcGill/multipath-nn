@@ -28,38 +28,6 @@ def minimize_expected(net, cost, optimizer, α_rtr=1):
     return optimizer.apply_gradients(scaled_grads)
 
 ################################################################################
-# Error Mapping
-################################################################################
-
-def add_ds_error_mapping(net):
-    λ = net.hypers.λ_em
-    for i, ℓ in enumerate(net.layers):
-        ℓ.μ_tr = tf.Variable(0.0, trainable=False)
-        ℓ.μ_vl = tf.Variable(0.0, trainable=False)
-        μ_batch = tf.reduce_mean(ℓ.c_err)
-        ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch)
-        ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch)
-        ℓ.c_err_cor = ℓ.c_err - ℓ.μ_tr + ℓ.μ_vl
-        setattr(net.params, 'μ_tr_%i' % i, ℓ.μ_tr)
-        setattr(net.params, 'μ_vl_%i' % i, ℓ.μ_vl)
-
-def add_cr_error_mapping(net):
-    λ = net.hypers.λ_em
-    for i, ℓ in enumerate(net.layers):
-        if hasattr(ℓ, 'δ_cor'):
-            ℓ.μ_tr = tf.Variable(0.0, trainable=False)
-            ℓ.μ_vl = tf.Variable(0.0, trainable=False)
-            μ_batch = tf.reduce_mean(ℓ.δ_cor)
-            ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch)
-            ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch)
-            ℓ.δ_cor_cor = ℓ.δ_cor - ℓ.μ_tr + ℓ.μ_vl
-            setattr(net.params, 'μ_tr_%i' % i, ℓ.μ_tr)
-            setattr(net.params, 'μ_vl_%i' % i, ℓ.μ_vl)
-        else:
-            ℓ.update_μ_tr = tf.no_op()
-            ℓ.update_μ_vl = tf.no_op()
-
-################################################################################
 # Root Network Class
 ################################################################################
 
@@ -124,11 +92,11 @@ class SRNet(Net):
 # Decision Smoothing Networks
 ################################################################################
 
-def route_sinks_ds_stat(ℓ, opts):
+def route_sinks_ds_stat(ℓ, opts, net):
     for s in ℓ.sinks:
-        route_ds(s, ℓ.p_tr, ℓ.p_ev, opts)
+        route_ds(s, ℓ.p_tr, ℓ.p_ev, opts, net)
 
-def route_sinks_ds_dyn(ℓ, opts):
+def route_sinks_ds_dyn(ℓ, opts, net):
     def n_leaves(ℓ): return (
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
@@ -139,18 +107,35 @@ def route_sinks_ds_dyn(ℓ, opts):
         tf.expand_dims(tf.to_int32(tf.argmax(x_route, 1)), 1),
         tf.range(len(ℓ.sinks))))
     for i, s in enumerate(ℓ.sinks):
-        route_ds(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
+        route_ds(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts, net)
 
-def route_ds(ℓ, p_tr, p_ev, opts):
+def route_ds(ℓ, p_tr, p_ev, opts, net):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    if len(ℓ.sinks) < 2: route_sinks_ds_stat(ℓ, opts)
-    else: route_sinks_ds_dyn(ℓ, opts)
+
+    ℓ.update_μ_tr = tf.no_op()
+    ℓ.update_μ_vl = tf.no_op()
+    ℓ.c_err_cor = ℓ.c_err
+
+    # λ = net.hypers.λ_em
+    # ℓ.μ_tr = tf.Variable(0.0, trainable=False)
+    # ℓ.μ_vl = tf.Variable(0.0, trainable=False)
+    # μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.c_err) / tf.reduce_sum(ℓ.p_tr)
+    # ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch)
+    # ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch)
+    # ℓ.update_μ_tr = tf.no_op()
+    # ℓ.update_μ_vl = tf.no_op()
+    # ℓ.c_err_cor = ℓ.c_err - ℓ.μ_tr + ℓ.μ_vl
+    # setattr(net.params, 'μ_tr_%i' % list(net.layers).index(ℓ), ℓ.μ_tr)
+    # setattr(net.params, 'μ_vl_%i' % list(net.layers).index(ℓ), ℓ.μ_vl)
+
+    if len(ℓ.sinks) < 2: route_sinks_ds_stat(ℓ, opts, net)
+    else: route_sinks_ds_dyn(ℓ, opts, net)
 
 class DSNet(Net):
     default_hypers = Ns(
-        k_cpt=0.0, ϵ=0.1, τ=1.0, λ_em=0.9,
-        λ_lrn=1e-3, μ_lrn=0.9, α_rtr=0.1)
+        k_cpt=0.0, ϵ=1e-3, τ=1.0, λ_em=0.9,
+        λ_lrn=1e-3, μ_lrn=0.9, α_rtr=1.0)
 
     def link(self):
         super().link()
@@ -160,9 +145,8 @@ class DSNet(Net):
         self.ϵ = tf.placeholder_with_default(ϕ.ϵ, ())
         self.τ = tf.placeholder_with_default(ϕ.τ, ())
         n_pts = tf.shape(self.x0)[0]
-        add_ds_error_mapping(self)
         route_ds(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
-                 Ns(ϵ=self.ϵ, τ=self.τ))
+                 Ns(ϵ=self.ϵ, τ=self.τ), self)
         c_err = sum(ℓ.p_tr * ℓ.c_err_cor for ℓ in self.layers)
         c_cpt = sum(ℓ.p_tr * ϕ.k_cpt * (ℓ.n_ops + getattr(ℓ.router, 'n_ops', 0))
                     for ℓ in self.layers)
@@ -179,20 +163,18 @@ class DSNet(Net):
 # Cost Regression Networks
 ################################################################################
 
-def route_sinks_cr_stat(ℓ, opts):
+def route_sinks_cr_stat(ℓ, opts, net):
     for s in ℓ.sinks:
-        route_cr(s, ℓ.p_tr, ℓ.p_ev, opts)
+        route_cr(s, ℓ.p_tr, ℓ.p_ev, opts, net)
     ℓ.c_ev = (
-        1 - getattr(ℓ, 'δ_cor_cor', 1)
-        + opts.k_cpt * ℓ.n_ops
+        ℓ.c_err + opts.k_cpt * ℓ.n_ops
         + sum(s.c_ev for s in ℓ.sinks))
     ℓ.c_opt = (
-        1 - getattr(ℓ, 'δ_cor_cor', 1)
-        + opts.k_cpt * ℓ.n_ops
+        ℓ.c_err + opts.k_cpt * ℓ.n_ops
         + sum(s.c_opt for s in ℓ.sinks))
-    ℓ.c_cre = tf.zeros(tf.shape(ℓ.x)[:1])
+    ℓ.c_cre = 0
 
-def route_sinks_cr_dyn(ℓ, opts):
+def route_sinks_cr_dyn(ℓ, opts, net):
     def n_leaves(ℓ): return (
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
@@ -203,15 +185,13 @@ def route_sinks_cr_dyn(ℓ, opts):
         tf.expand_dims(tf.to_int32(tf.argmax(x_route, 1)), 1),
         tf.range(len(ℓ.sinks))))
     for i, s in enumerate(ℓ.sinks):
-        route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts)
+        route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts, net)
     ℓ.c_ev = (
-        1 - getattr(ℓ, 'δ_cor_cor', 1)
-        + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+        ℓ.c_err + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
         + sum(π_ev[:, i] * s.c_ev
               for i, s in enumerate(ℓ.sinks)))
     ℓ.c_opt = (
-        1 - getattr(ℓ, 'δ_cor_cor', 1)
-        + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+        ℓ.c_err + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
         + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
     ℓ.c_cre = (
         opts.k_cre * sum(
@@ -219,17 +199,36 @@ def route_sinks_cr_dyn(ℓ, opts):
                 s.c_opt if opts.optimistic else s.c_ev))
             for i, s in enumerate(ℓ.sinks)))
 
-def route_cr(ℓ, p_tr, p_ev, opts):
+def route_cr(ℓ, p_tr, p_ev, opts, net):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-    if len(ℓ.sinks) < 2: route_sinks_cr_stat(ℓ, opts)
-    else: route_sinks_cr_dyn(ℓ, opts)
+
+    # λ = net.hypers.λ_em
+    # if hasattr(ℓ, 'δ_cor'):
+    #     ℓ.μ_tr = tf.Variable(0.0, trainable=False)
+    #     ℓ.μ_vl = tf.Variable(0.0, trainable=False)
+    #     μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.δ_cor) / tf.reduce_sum(ℓ.p_tr)
+    #     ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch)
+    #     ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch)
+    #     ℓ.δ_cor_cor = ℓ.δ_cor - ℓ.μ_tr + ℓ.μ_vl
+    #     setattr(net.params, 'μ_tr_%i' % list(net.layers).index(ℓ), ℓ.μ_tr)
+    #     setattr(net.params, 'μ_vl_%i' % list(net.layers).index(ℓ), ℓ.μ_vl)
+    # else:
+    #     ℓ.update_μ_tr = tf.no_op()
+    #     ℓ.update_μ_vl = tf.no_op()
+
+    ℓ.update_μ_tr = tf.no_op()
+    ℓ.update_μ_vl = tf.no_op()
+    ℓ.c_err_cor = ℓ.c_err
+
+    if len(ℓ.sinks) < 2: route_sinks_cr_stat(ℓ, opts, net)
+    else: route_sinks_cr_dyn(ℓ, opts, net)
 
 class CRNet(Net):
     default_hypers = Ns(
-        k_cpt=0.0, k_cre=0.01, ϵ=0.1, τ=0.2,
+        k_cpt=0.0, k_cre=1e-3, ϵ=1e-3, τ=0.01,
         λ_em=0.9, λ_lrn=1e-3, μ_lrn=0.9,
-        α_rtr=10.0, optimistic=True)
+        α_rtr=1.0, optimistic=True)
 
     def link(self):
         super().link()
@@ -239,10 +238,9 @@ class CRNet(Net):
         self.ϵ = tf.placeholder_with_default(ϕ.ϵ, ())
         self.τ = tf.placeholder_with_default(ϕ.τ, ())
         n_pts = tf.shape(self.x0)[0]
-        add_cr_error_mapping(self)
         route_cr(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
                  Ns(ϵ=self.ϵ, τ=self.τ, k_cpt=ϕ.k_cpt, k_cre=ϕ.k_cre,
-                    optimistic=ϕ.optimistic))
+                    optimistic=ϕ.optimistic), self)
         c_err = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_err for ℓ in self.layers)
         c_cre = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_cre for ℓ in self.layers)
         c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
