@@ -3,8 +3,9 @@
 Measure network performance statistics.
 '''
 from argparse import ArgumentParser
-from os import listdir, makedirs
-from os.path import join
+from glob import glob
+from os import makedirs
+from os.path import basename, join
 
 import numpy as np
 import tensorflow as tf
@@ -51,12 +52,11 @@ def state_tensors(net):
             **{(ℓ, 'c_err_cor'): ℓ.c_err_cor for ℓ in net.leaves
                if hasattr(ℓ, 'c_err_cor')}}
 
-for net_name in sorted(listdir(args.net_path)):
+for net_path in sorted(glob(join(args.net_path, '*.npy'))):
     with tf.Graph().as_default():
         sess = tf.Session()
         with sess.as_default():
-            net = read_net(join(args.net_path, net_name))
-            lazify_op_counts(net.root)
+            net = read_net(net_path)
             desc = net_desc(net, dataset, {}, state_tensors(net))
             makedirs(args.stats_path, exist_ok=True)
-            np.save(join(args.stats_path, net_name), desc)
+            np.save(join(args.stats_path, basename(net_path)), desc)
