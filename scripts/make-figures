@@ -2,9 +2,12 @@
 '''
 Generate accuracy/efficiency plots.
 '''
-from json import loads
+from glob import glob
 from os import listdir, makedirs
 from os.path import basename, splitext
+
+import matplotlib as mpl
+mpl.use('Agg')
 
 import matplotlib as mpl
 import matplotlib.patches as pch
@@ -19,9 +22,8 @@ import seaborn as sns
 logs = {}
 
 for log_name in listdir('stats'):
-    with open('stats/' + log_name, 'r') as f:
-        logs[splitext(log_name)[0]] = sorted(
-            loads(f.read()), key=(lambda n: n['stats_ts']['moc']))
+    logs[splitext(log_name)[0]] = (
+        [np.load(p)[()] for p in sorted(glob('stats/%s/*' % log_name))])
 
 errs = {name: [1 - net['stats_ts']['acc'] for net in log]
         for name, log in logs.items()}
@@ -38,36 +40,44 @@ makedirs('figures', exist_ok=True)
 # Generate accuracy/efficiency plots.
 ################################################################################
 
-def make_acc_eff_plot(dst, src):
-    plt.figure(figsize=(6, 4))
-    plt.xlabel('Mean Op Count')
-    plt.ylabel('Error Rate')
-    for log_name, label, color in src:
-        plt.plot(mocs[log_name], errs[log_name], label=label, color=color)
-    plt.ylim(0, 0.2)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig('figures/' + dst, transparent=True)
-
-make_acc_eff_plot('acc-eff-0.png', [
-    ('sr-chains', 'Static Routing', sns.color_palette()[0]),
-    ('ds-chains', 'Decision Smoothing', sns.color_palette()[1]),
-    ('cr-chains', 'Cost Regression', sns.color_palette()[2])])
-make_acc_eff_plot('acc-eff-1.png', [
-    ('sr-chains', 'Static Routing', sns.color_palette()[0]),
-    ('ds-chains', 'Decision Smoothing', sns.color_palette()[1]),
-    ('ds-chains-em', 'Decision Smoothing (with EM)', sns.color_palette()[3])])
-make_acc_eff_plot('acc-eff-2.png', [
-    ('sr-chains', 'Statically-Routed Chains', sns.color_palette()[0]),
-    ('ds-chains', 'Decision Smoothing Chains', sns.color_palette()[1]),
-    ('ds-trees', 'Decision Smoothing Trees', sns.color_palette()[5])])
+plt.figure(figsize=(6, 4))
+plt.xlabel('Mean Op Count')
+plt.ylabel('Error Rate')
+plt.plot(
+    mocs['one-true-sr-chains'],
+    errs['one-true-sr-chains'],
+    label='Statically-Routed Chains',
+    color=sns.color_palette()[0])
+plt.plot(
+    mocs['one-true-ds-chains'],
+    errs['one-true-ds-chains'],
+    label='Decision-Softening Chains',
+    color=sns.color_palette()[1],
+    markeredgewidth=0)
+plt.plot(
+    mocs['one-true-cr-chains'],
+    errs['one-true-cr-chains'],
+    label='Cost-Regression Chains',
+    color=sns.color_palette()[2],
+    markeredgewidth=0)
+plt.plot(
+    mocs['one-true-cr-trees'],
+    errs['one-true-cr-trees'],
+    'o', label='Cost-Regression Trees',
+    color=sns.color_palette()[3],
+    markeredgewidth=0)
+plt.ylim(0, 0.05)
+plt.legend()
+plt.tight_layout()
+plt.savefig('figures/acc-eff.pdf')
+plt.savefig('figures/acc-eff.svg')
 
 ################################################################################
 # Generate node-link diagrams.
 ################################################################################
 
-cls_labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer',
-              'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
+cls_labels = ['0', '1', '2', '3',
+              'Airplane', 'Automobile', 'Deer', 'Horse']
 
 def nld_bounds(ℓ, x, y, r):
     x0 = x; x1 = x
@@ -129,9 +139,9 @@ def draw_cls_nld(ℓ, x, y, r):
 def make_chain_acc_nld(dst, log_name):
     plt.figure()
     n_nets = len(logs[log_name])
-    max_depth = nld_bounds(logs[log_name][0]['root'], 0, 0, 1)[1]
+    max_depth = nld_bounds(logs[log_name][0]['root']['sinks'][0], 0, 0, 1)[1]
     for i, net in enumerate(logs[log_name]):
-        draw_acc_nld(net['root'], 0, i, 1)
+        draw_acc_nld(net['root']['sinks'][0], 0, i, 1)
     plt.arrow(0.4 * max_depth, -0.6, 0.2 * max_depth, 0, fc='#909090',
               ec='#909090', linewidth=3, head_width=0.075)
     plt.arrow(-0.6, 0.2 * (n_nets - 1), 0, 0.6 * (n_nets - 1), fc='#909090',
@@ -144,7 +154,7 @@ def make_chain_acc_nld(dst, log_name):
         pch.Patch(color=sns.color_palette()[0]),
         pch.Patch(color=sns.color_palette()[2])],
         ['Correct Labels', 'Incorrect Labels'],
-        'lower right', fontsize='medium')
+        'lower right', fontsize='small')
     plt.gca().set_aspect('equal')
     plt.gcf().set_size_inches(max_depth + 2, n_nets + 2)
     plt.tight_layout()
@@ -153,9 +163,9 @@ def make_chain_acc_nld(dst, log_name):
 def make_chain_cls_nld(dst, log_name):
     plt.figure()
     n_nets = len(logs[log_name])
-    max_depth = nld_bounds(logs[log_name][0]['root'], 0, 0, 1)[1]
+    max_depth = nld_bounds(logs[log_name][0]['root']['sinks'][0], 0, 0, 1)[1]
     for i, net in enumerate(logs[log_name]):
-        draw_cls_nld(net['root'], 0, i, 1)
+        draw_cls_nld(net['root']['sinks'][0], 0, i, 1)
     plt.arrow(0.4 * max_depth, -0.6, 0.2 * max_depth, 0, fc='#909090',
               ec='#909090', linewidth=3, head_width=0.075)
     plt.arrow(-0.6, 0.2 * (n_nets - 1), 0, 0.6 * (n_nets - 1), fc='#909090',
@@ -165,8 +175,9 @@ def make_chain_cls_nld(dst, log_name):
     plt.xlim(-0.7, max_depth + 0.7)
     plt.ylim(-0.7, n_nets - 0.3)
     plt.figlegend(
-        [pch.Patch(color=c) for c in sns.color_palette('hls', 10)],
-        cls_labels, 'lower right', ncol=5, columnspacing=1, fontsize='small')
+        [pch.Patch(color=c) for c in sns.color_palette('hls', 8)],
+        cls_labels, 'lower right', ncol=4, columnspacing=1,
+        fontsize='small')
     plt.gca().set_aspect('equal')
     plt.gcf().set_size_inches(max_depth + 2, n_nets + 2)
     plt.tight_layout()
@@ -175,8 +186,8 @@ def make_chain_cls_nld(dst, log_name):
 def make_tree_acc_nld(dst, log_name, i):
     plt.figure()
     net = logs[log_name][i]
-    draw_acc_nld(net['root'], 0, 0, 2)
-    x0, x1, y0, y1 = nld_bounds(net['root'], 0, 0, 2)
+    draw_acc_nld(net['root']['sinks'][0], 0, 0, 2)
+    x0, x1, y0, y1 = nld_bounds(net['root']['sinks'][0], 0, 0, 2)
     plt.arrow(0.35 * x1, y0 - 0.33, 0.3 * x1, 0, fc='#909090',
               ec='#909090', linewidth=3, head_width=0.075)
     plt.xlabel('Dataflow', fontsize='large', color='#606060')
@@ -195,32 +206,33 @@ def make_tree_acc_nld(dst, log_name, i):
 def make_tree_cls_nld(dst, log_name, i):
     plt.figure()
     net = logs[log_name][i]
-    draw_cls_nld(net['root'], 0, 0, 2)
-    x0, x1, y0, y1 = nld_bounds(net['root'], 0, 0, 2)
+    draw_cls_nld(net['root']['sinks'][0], 0, 0, 2)
+    x0, x1, y0, y1 = nld_bounds(net['root']['sinks'][0], 0, 0, 2)
     plt.arrow(0.35 * x1, y0 - 0.33, 0.3 * x1, 0, fc='#909090',
               ec='#909090', linewidth=3, head_width=0.075)
     plt.xlabel('Dataflow', fontsize='large', color='#606060')
     plt.xlim(x0 - 0.4, x1 + 0.4)
     plt.ylim(y0 - 0.4, y1 + 0.4)
     plt.figlegend(
-        [pch.Patch(color=c) for c in sns.color_palette('hls', 10)],
+        [pch.Patch(color=c) for c in sns.color_palette('hls', 8)],
         cls_labels, 'upper left', fontsize='small')
     plt.gca().set_aspect('equal')
     plt.gcf().set_size_inches(x1 - x0 + 2, y1 - y0 + 2)
     plt.tight_layout()
     plt.savefig('figures/' + dst, transparent=True)
 
-make_chain_acc_nld('acc-nld-ds-chains.png', 'ds-chains')
-make_chain_acc_nld('acc-nld-cr-chains.png', 'cr-chains')
-make_chain_cls_nld('cls-nld-ds-chains.png', 'ds-chains')
-make_chain_cls_nld('cls-nld-cr-chains.png', 'cr-chains')
+make_chain_acc_nld('acc-nld-ds-chains.pdf', 'one-true-ds-chains')
+make_chain_acc_nld('acc-nld-cr-chains.pdf', 'one-true-cr-chains')
+make_chain_acc_nld('acc-nld-ds-chains.svg', 'one-true-ds-chains')
+make_chain_cls_nld('cls-nld-ds-chains.pdf', 'one-true-ds-chains')
+make_chain_cls_nld('cls-nld-cr-chains.pdf', 'one-true-cr-chains')
+make_chain_cls_nld('cls-nld-ds-chains.svg', 'one-true-ds-chains')
 
-for i in range(len(logs['ds-trees'])):
-    make_tree_acc_nld('acc-nld-ds-trees-%i.png' % i, 'ds-trees', i)
-    make_tree_cls_nld('cls-nld-ds-trees-%i.png' % i, 'ds-trees', i)
-for i in range(len(logs['cr-trees'])):
-    make_tree_acc_nld('acc-nld-cr-trees-%i.png' % i, 'cr-trees', i)
-    make_tree_cls_nld('cls-nld-cr-trees-%i.png' % i, 'cr-trees', i)
+make_tree_acc_nld('acc-nld-cr-tree.pdf', 'one-true-cr-trees', 0)
+make_tree_cls_nld('cls-nld-cr-tree.pdf', 'one-true-cr-trees', 0)
+make_tree_cls_nld('cls-nld-cr-tree.svg', 'one-true-cr-trees', 0)
+
+exit()
 
 ################################################################################
 # Generate a per-layer mean error plot.
