@@ -116,10 +116,10 @@ def resize(x, h, w):
 def recolor(x, d_min=0.3):
     x_tf = []
     for x_i in x:
-        c0 = rand.rand(3)
-        c1 = rand.rand(3)
+        c0 = np.float32(rand.rand(3))
+        c1 = np.float32(rand.rand(3))
         while np.sqrt(np.sum(np.square(c1 - c0))) < d_min:
-            c1 = rand.rand(3)
+            c1 = np.float32(rand.rand(3))
         x_tf.append(c0 + (c1 - c0) * x_i)
     return np.array(x_tf)
 
