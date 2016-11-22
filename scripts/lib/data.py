@@ -1,6 +1,5 @@
 import numpy as np
 import numpy.random as rand
-import scipy.io as io
 
 __all__ = ['Dataset']
 
@@ -22,12 +21,15 @@ def rand_shift(a, r):
     b[i_u_b, i_v_b] = a[i_u_a, i_v_a]
     return b
 
-def augmented_batch(x0, y, n, r_shift):
+def augmented_batch(x0, y, n, m_sym, r_shift):
     x0_batch = np.empty((n, *x0.shape[1:]))
     y_batch = np.empty((n, *y.shape[1:]))
     for i in range(n):
         j = rand.randint(0, len(x0))
-        x0_batch[i] = rand_shift(rand_flip(x0[j]), r_shift)
+        if m_sym[np.argmax(y[j])]:
+            x0_batch[i] = rand_shift(rand_flip(x0[j]), r_shift)
+        else:
+            x0_batch[i] = rand_shift(x0[j], r_shift)
         y_batch[i] = y[j]
     return x0_batch, y_batch
 
@@ -50,11 +52,12 @@ def full_set(x0, y, n):
 
 class Dataset:
     def __init__(self, path, n_vl=0):
-        archive = io.loadmat(path)
+        archive = np.load(path)['arr_0'][()]
         self.x0_tr = archive['x0_tr']
         self.x0_ts = archive['x0_ts']
         self.y_tr = archive['y_tr']
         self.y_ts = archive['y_ts']
+        self.m_sym = archive['m_sym']
         if n_vl > 0:
             rand.seed(0)
             order = rand.permutation(len(self.x0_tr))
@@ -76,7 +79,7 @@ class Dataset:
         return self.y_tr.shape[1:]
 
     def augmented_training_batch(self, n=128, r_shift=4):
-        return augmented_batch(self.x0_tr, self.y_tr, n, r_shift)
+        return augmented_batch(self.x0_tr, self.y_tr, n, self.m_sym, r_shift)
 
     def training_batch(self, n=128):
         return batch(self.x0_tr, self.y_tr, n)
