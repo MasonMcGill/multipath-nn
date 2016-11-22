@@ -147,37 +147,39 @@ class MultiscaleLLN(Layer):
             self.x.append(x_i / (x_i_lum / x_i_density + ϕ.ϵ))
 
 class MultiscaleConvMax(Layer):
-    default_hypers = Ns(n_chan=1, supp=1, k_l2=0, σ_w=1)
+    default_hypers = Ns(n_chan=[], supp=1, k_l2=0, σ_w=1)
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
         ϕ, θ = self.hypers, self.params
-        n_in = x[0].get_shape()[3].value
-        w_horz_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
-        w_vert_shape = (ϕ.supp, ϕ.supp, ϕ.n_chan, ϕ.n_chan)
-        w_horz_scale = ϕ.σ_w / ϕ.supp / np.sqrt(2 * n_in)
-        w_vert_scale = ϕ.σ_w / ϕ.supp / np.sqrt(2 * ϕ.n_chan)
+        n_in = [x_i.get_shape()[3].value for x_i in x]
         w_horz = [
-            tf.Variable(w_horz_scale * tf.random_normal(w_horz_shape))
-            for _ in range(len(x))]
+            tf.Variable(
+                ϕ.σ_w / ϕ.supp / np.sqrt(n_in[i])
+                * tf.random_normal((ϕ.supp, ϕ.supp, n_in[i], ϕ.n_chan[i])))
+            for i in range(-len(ϕ.n_chan), 0)]
         w_vert = [
-            tf.Variable(w_vert_scale * tf.random_normal(w_vert_shape))
-            for _ in range(len(x) - 1)]
+            tf.Variable(
+                ϕ.σ_w / ϕ.supp / np.sqrt(ϕ.n_chan[i])
+                * tf.random_normal((
+                    ϕ.supp, ϕ.supp, ϕ.n_chan[i],
+                    ϕ.n_chan[i+1])))
+            for i in range(len(ϕ.n_chan) - 1)]
         b = [
-            tf.Variable(tf.zeros(ϕ.n_chan))
-            for _ in range(len(x))]
+            tf.Variable(tf.zeros(ϕ.n_chan[i]))
+            for i in range(len(ϕ.n_chan))]
         for i, w_i in enumerate(w_horz):
             setattr(θ, 'w_horz_%i' % i, w_i)
         for i, w_i in enumerate(w_vert):
             setattr(θ, 'w_vert_%i' % i, w_i)
         for i, b_i in enumerate(b):
             setattr(θ, 'b_%i' % i, b_i)
-        self.x = len(x) * [None]
-        self.x[0] = b[0] + conv(x[0], w_horz[0])
-        for i in range(1, len(self.x)):
+        self.x = len(ϕ.n_chan) * [None]
+        self.x[0] = b[0] + conv(x[-len(ϕ.n_chan)], w_horz[0])
+        for i in range(1 - len(ϕ.n_chan), 0):
             self.x[i] = (
                 b[i] + conv(x[i], w_horz[i])
-                + conv(pool(self.x[i-1]), w_vert[i-1]))
+                + conv(pool(self.x[i-1]), w_vert[i]))
         self.c_mod = ϕ.k_l2 * (
             sum(tf.reduce_sum(tf.square(w)) for w in w_horz) +
             sum(tf.reduce_sum(tf.square(w)) for w in w_vert))
@@ -186,51 +188,6 @@ class MultiscaleConvMax(Layer):
                 n_el(w_horz[i])
                 + (n_el(w_vert[i-1])
                    if i > 0 else 0))
-            for i, x_i in enumerate(self.x))
-
-class MultiscaleConvMaxDS(Layer):
-    default_hypers = Ns(n_chan=1, supp=1, k_l2=0, σ_w=1)
-
-    def link(self, x, y, mode):
-        super().link(x, y, mode)
-        ϕ, θ = self.hypers, self.params
-        n_in = x[0].get_shape()[3].value
-        w_horz_shape = (ϕ.supp, ϕ.supp, n_in, ϕ.n_chan)
-        w_vert_shape = (ϕ.supp, ϕ.supp, ϕ.n_chan, ϕ.n_chan)
-        w_horz_scale = ϕ.σ_w / ϕ.supp / np.sqrt(2 * n_in)
-        w_vert_scale = ϕ.σ_w / ϕ.supp / np.sqrt(2 * ϕ.n_chan)
-        w_horz = [
-            tf.Variable(w_horz_scale * tf.random_normal(w_horz_shape))
-            for _ in range(len(x) - 1)]
-        w_vert = [
-            tf.Variable(w_vert_scale * tf.random_normal(w_vert_shape))
-            for _ in range(len(x) - 2)]
-        θ.w_diag = tf.Variable(w_horz_scale * tf.random_normal(w_horz_shape))
-        b = [
-            tf.Variable(tf.zeros(ϕ.n_chan))
-            for _ in range(len(x) - 1)]
-        for i, w_i in enumerate(w_horz):
-            setattr(θ, 'w_horz_%i' % i, w_i)
-        for i, w_i in enumerate(w_vert):
-            setattr(θ, 'w_vert_%i' % i, w_i)
-        for i, b_i in enumerate(b):
-            setattr(θ, 'b_%i' % i, b_i)
-        self.x = (len(x) - 1) * [None]
-        self.x[0] = (
-            b[0] + conv(x[1], w_horz[0])
-            + conv(pool(x[0]), θ.w_diag))
-        for i in range(1, len(self.x)):
-            self.x[i] = (
-                b[i] + conv(x[i+1], w_horz[i])
-                + conv(pool(self.x[i-1]), w_vert[i-1]))
-        self.c_mod = ϕ.k_l2 * (
-            sum(tf.reduce_sum(tf.square(w)) for w in w_horz) +
-            sum(tf.reduce_sum(tf.square(w)) for w in w_vert))
-        self.n_ops = sum(
-            n_pix(x_i) * (
-                n_el(w_horz[i])
-                + (n_el(w_vert[i-1]) if i > 0
-                   else n_el(θ.w_diag)))
             for i, x_i in enumerate(self.x))
 
 class MultiscaleRect(Layer):
