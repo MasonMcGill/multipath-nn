@@ -28,6 +28,32 @@ def minimize_expected(net, cost, optimizer, α_rtr=1):
     return optimizer.apply_gradients(scaled_grads)
 
 ################################################################################
+# Error Mapping
+################################################################################
+
+def add_error_mapping(net, ℓ):
+    λ = net.hypers.λ_em
+    ℓ.μ_tr = tf.Variable(0.0, trainable=False)
+    ℓ.μ_vl = tf.Variable(0.0, trainable=False)
+    ℓ.d_tr = tf.Variable(0.0, trainable=False)
+    ℓ.d_vl = tf.Variable(0.0, trainable=False)
+    μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.c_err) / tf.reduce_sum(ℓ.p_tr)
+    ℓ.update_μ_tr = tf.group(
+        tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch),
+        tf.assign(ℓ.d_tr, λ * ℓ.d_tr + 1 - λ))
+    ℓ.update_μ_vl = tf.group(
+        tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch),
+        tf.assign(ℓ.d_vl, λ * ℓ.d_vl + 1 - λ))
+    ℓ.c_err_cor = tf.cond(
+        ℓ.d_tr * ℓ.d_vl > 0,
+        lambda: ℓ.c_err - ℓ.μ_tr / ℓ.d_tr + ℓ.μ_vl / ℓ.d_vl,
+        lambda: ℓ.c_err)
+    setattr(net.params, 'μ_tr_%i' % list(net.layers).index(ℓ), ℓ.μ_tr)
+    setattr(net.params, 'μ_vl_%i' % list(net.layers).index(ℓ), ℓ.μ_vl)
+    setattr(net.params, 'd_tr_%i' % list(net.layers).index(ℓ), ℓ.d_tr)
+    setattr(net.params, 'd_vl_%i' % list(net.layers).index(ℓ), ℓ.d_vl)
+
+################################################################################
 # Root Network Class
 ################################################################################
 
@@ -112,23 +138,7 @@ def route_sinks_ds_dyn(ℓ, opts, net):
 def route_ds(ℓ, p_tr, p_ev, opts, net):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-
-    ℓ.update_μ_tr = tf.no_op()
-    ℓ.update_μ_vl = tf.no_op()
-    ℓ.c_err_cor = ℓ.c_err
-
-    # λ = net.hypers.λ_em
-    # ℓ.μ_tr = tf.Variable(0.0, trainable=False)
-    # ℓ.μ_vl = tf.Variable(0.0, trainable=False)
-    # μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.c_err) / tf.reduce_sum(ℓ.p_tr)
-    # ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch)
-    # ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch)
-    # ℓ.update_μ_tr = tf.no_op()
-    # ℓ.update_μ_vl = tf.no_op()
-    # ℓ.c_err_cor = ℓ.c_err - ℓ.μ_tr + ℓ.μ_vl
-    # setattr(net.params, 'μ_tr_%i' % list(net.layers).index(ℓ), ℓ.μ_tr)
-    # setattr(net.params, 'μ_vl_%i' % list(net.layers).index(ℓ), ℓ.μ_vl)
-
+    add_error_mapping(net, ℓ)
     if len(ℓ.sinks) < 2: route_sinks_ds_stat(ℓ, opts, net)
     else: route_sinks_ds_dyn(ℓ, opts, net)
 
@@ -202,25 +212,7 @@ def route_sinks_cr_dyn(ℓ, opts, net):
 def route_cr(ℓ, p_tr, p_ev, opts, net):
     ℓ.p_tr = p_tr
     ℓ.p_ev = p_ev
-
-    # λ = net.hypers.λ_em
-    # if hasattr(ℓ, 'δ_cor'):
-    #     ℓ.μ_tr = tf.Variable(0.0, trainable=False)
-    #     ℓ.μ_vl = tf.Variable(0.0, trainable=False)
-    #     μ_batch = tf.reduce_sum(ℓ.p_tr * ℓ.δ_cor) / tf.reduce_sum(ℓ.p_tr)
-    #     ℓ.update_μ_tr = tf.assign(ℓ.μ_tr, λ * ℓ.μ_tr + (1 - λ) * μ_batch)
-    #     ℓ.update_μ_vl = tf.assign(ℓ.μ_vl, λ * ℓ.μ_vl + (1 - λ) * μ_batch)
-    #     ℓ.δ_cor_cor = ℓ.δ_cor - ℓ.μ_tr + ℓ.μ_vl
-    #     setattr(net.params, 'μ_tr_%i' % list(net.layers).index(ℓ), ℓ.μ_tr)
-    #     setattr(net.params, 'μ_vl_%i' % list(net.layers).index(ℓ), ℓ.μ_vl)
-    # else:
-    #     ℓ.update_μ_tr = tf.no_op()
-    #     ℓ.update_μ_vl = tf.no_op()
-
-    ℓ.update_μ_tr = tf.no_op()
-    ℓ.update_μ_vl = tf.no_op()
-    ℓ.c_err_cor = ℓ.c_err
-
+    add_error_mapping(net, ℓ)
     if len(ℓ.sinks) < 2: route_sinks_cr_stat(ℓ, opts, net)
     else: route_sinks_cr_dyn(ℓ, opts, net)
 
