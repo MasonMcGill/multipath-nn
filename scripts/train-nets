@@ -187,16 +187,18 @@ def train(dst, net):
             x0, y = dataset.validation_batch()
             net.validate.run({
                 net.x0: x0, net.y: y,
+                net.τ: 0.1 / 2**(t / 15000),
                 net.mode: 'vl'})
         if (t + 1) % t_log == 0:
             desc = render_net_desc(
                 net_desc(net, dataset, {}, net_state),
                 '%s — Epoch %i' % (dst, t + 1))
+            makedirs(dirname(dst), exist_ok=True)
             with open(dst[:-4] + '.log', 'a+') as f:
                 f.write(desc + '\n')
             print(desc)
-        makedirs(dirname(dst), exist_ok=True)
-        write_net(dst, net)
+    makedirs(dirname(dst), exist_ok=True)
+    write_net(dst, net)
 
 ################################################################################
 # Train networks.
