@@ -3,10 +3,9 @@
 Train statically- or dynamically-routed networks.
 '''
 from argparse import ArgumentParser
-from collections import namedtuple
 from os import makedirs
 from os.path import dirname, join
-from sys import maxsize
+from types import SimpleNamespace as Ns
 
 import numpy as np
 import numpy.random as rand
@@ -108,7 +107,7 @@ def reg():
         Softmax(), CrossEntropyError()])
 
 ################################################################################
-# Define network constructors lists.
+# Define network constructors.
 ################################################################################
 
 def sr_chain(n_tf):
@@ -155,12 +154,26 @@ def dr_tree(type_, k_cpt=0.0):
                     rcm(4, reg(),
                     rcm(5, reg())))))))))
 
-net_constr_lists = {
-    'sr-chains': [sr_chain(n) for n in range(1, len(arch) + 1)],
-    'ds-chains': [dr_chain(DSNet, k) for k in k_cpts],
-    'cr-chains': [dr_chain(CRNet, k) for k in k_cpts],
-    'ds-trees': [dr_tree(DSNet, k) for k in k_cpts],
-    'cr-trees': [dr_tree(CRNet, k) for k in k_cpts]}
+################################################################################
+# Define experiments.
+################################################################################
+
+experiments = {
+    'sr-chains': Ns(
+        nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
+        hypers=(lambda net, t: {})),
+    'ds-chains': Ns(
+        nets=[dr_chain(DSNet, k) for k in k_cpts],
+        hypers=(lambda net, t: {net.ϵ: 0.5 / 2**(t / 10000)})),
+    'cr-chains': Ns(
+        nets=[dr_chain(CRNet, k) for k in k_cpts],
+        hypers=(lambda net, t: {net.τ: 0.1 / 2**(t / 15000)})),
+    'ds-trees': Ns(
+        nets=[dr_tree(DSNet, k) for k in k_cpts],
+        hypers=(lambda net, t: {net.ϵ: 0.5 / 2**(t / 10000)})),
+    'cr-trees': Ns(
+        nets=[dr_tree(CRNet, k) for k in k_cpts],
+        hypers=(lambda net, t: {net.τ: 0.1 / 2**(t / 15000)}))}
 
 ################################################################################
 # Define a training function.
@@ -173,7 +186,7 @@ def state_tensors(net):
             **{(ℓ, 'p_cor'): ℓ.p_ev * ℓ.δ_cor for ℓ in net.leaves},
             **{(ℓ, 'p_inc'): ℓ.p_ev * (1 - ℓ.δ_cor) for ℓ in net.leaves}}
 
-def train(dst, net):
+def train(dst, net, hypers):
     net_state = state_tensors(net)
     for t in range(n_iter):
         x0, y = dataset.augmented_training_batch()
@@ -181,14 +194,13 @@ def train(dst, net):
               end='', flush=True)
         net.train.run({
             net.x0: x0, net.y: y, net.mode: 'tr',
-            net.τ: 0.1 / 2**(t / 15000),
-            net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal)})
+            net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
+            **hypers(net, t)})
         if args.use_em and rand.rand() < p_vl:
             x0, y = dataset.validation_batch()
             net.validate.run({
-                net.x0: x0, net.y: y,
-                net.τ: 0.1 / 2**(t / 15000),
-                net.mode: 'vl'})
+                net.x0: x0, net.y: y, net.mode: 'vl',
+                **hypers(net, t)})
         if (t + 1) % t_log == 0:
             desc = render_net_desc(
                 net_desc(net, dataset, {}, net_state),
@@ -204,11 +216,13 @@ def train(dst, net):
 # Train networks.
 ################################################################################
 
-for i, net_constr in enumerate(net_constr_lists[args.net_type]):
+expt = experiments[args.net_type]
+
+for i, net_constr in enumerate(expt.nets):
     with tf.Graph().as_default():
         sess = tf.Session(config=tf.ConfigProto(
             gpu_options=tf.GPUOptions(allow_growth=True)))
         with sess.as_default():
             net = net_constr()
             tf.initialize_all_variables().run()
-            train(join(args.net_path, '%.4i.npy' % i), net)
+            train(join(args.net_path, '%.4i.npy' % i), net, expt.hypers)
