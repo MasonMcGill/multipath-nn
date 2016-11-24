@@ -48,7 +48,7 @@ arch = [
 
 n_iter = 60000
 t_log = 2500
-batch_size = 128
+batch_size = 256
 
 n_vl = 1280
 p_vl = 0.05
