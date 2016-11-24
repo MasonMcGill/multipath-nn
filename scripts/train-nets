@@ -203,7 +203,7 @@ def train(dst, net, hypers):
                 **hypers(net, t)})
         if (t + 1) % t_log == 0:
             desc = render_net_desc(
-                net_desc(net, dataset, {}, net_state),
+                net_desc(net, dataset, hypers(net, t), net_state),
                 '%s — Epoch %i' % (dst, t + 1))
             makedirs(dirname(dst), exist_ok=True)
             with open(dst[:-4] + '.log', 'a+') as f:
