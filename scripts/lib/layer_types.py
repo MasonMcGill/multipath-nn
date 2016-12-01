@@ -156,7 +156,10 @@ class MultiscaleConvMax(Layer):
         w_horz = [
             tf.Variable(
                 ϕ.σ_w / ϕ.supp / np.sqrt(n_in[i])
-                * tf.random_normal((ϕ.supp, ϕ.supp, n_in[i], ϕ.n_chan[i])))
+                * tf.random_normal((
+                    min(ϕ.supp, x[i].get_shape()[1].value),
+                    min(ϕ.supp, x[i].get_shape()[2].value),
+                    n_in[i], ϕ.n_chan[i])))
             for i in range(-len(ϕ.n_chan), 0)]
         w_vert = [
             tf.Variable(
