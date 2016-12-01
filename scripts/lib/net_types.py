@@ -220,7 +220,7 @@ class CRNet(Net):
     default_hypers = Ns(
         k_cpt=0.0, k_cre=1e-3, ϵ=1e-3, τ=0.01,
         λ_em=0.9, λ_lrn=1e-3, μ_lrn=0.9,
-        α_rtr=1.0, optimistic=True)
+        α_rtr=1.0, optimistic=False)
 
     def link(self):
         super().link()
