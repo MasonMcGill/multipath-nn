@@ -44,7 +44,7 @@ def render_stats(stats):
         '(%s)' % '; '.join(
             '%s=%.3g' % i
             for i in sorted(stats.items())
-            if np.ndim(i) == 0)
+            if np.ndim(i[1]) == 0)
         if len(stats) > 0 else '')
 
 def render_layer_desc(desc, stats_key):

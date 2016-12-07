@@ -130,7 +130,7 @@ mnist = np.load('data/mnist.npz')['arr_0'][()]
 cifar10 = np.load('data/cifar-10.npz')['arr_0'][()]
 
 hybrid = {
-    'm_sym': [0, 0, 0, 0, 1, 1, 1, 1],
+    'm_sym': [0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
     'x0_tr': np.vstack([
         recolor(resize(mnist['x0_tr'], 32, 32)),
         cifar10['x0_tr']]),
@@ -144,7 +144,7 @@ hybrid = {
         np.hstack([mnist['y_ts'], np.zeros_like(mnist['y_ts'])]),
         np.hstack([np.zeros_like(cifar10['y_ts']), cifar10['y_ts']])])}
 
-classes = [0, 1, 2, 3, 10, 11, 14, 17]
+classes = [0, 1, 2, 3, 4, 10, 11, 14, 16, 17]
 m_tr = [np.argmax(hybrid['y_tr'], 1) == c for c in classes]
 m_ts = [np.argmax(hybrid['y_ts'], 1) == c for c in classes]
 hybrid['x0_tr'] = np.vstack([
