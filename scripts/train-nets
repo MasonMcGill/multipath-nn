@@ -18,7 +18,7 @@ from lib.layer_types import (
     MultiscaleConvMax, MultiscaleLLN, MultiscaleRect, Rect, Select,
     Softmax, ToPyramid)
 
-from lib.net_types import CRNet, DSNet, SRNet
+from lib.net_types import AcNet, CRNet, DSNet, SRNet
 from lib.serdes import write_net
 
 ################################################################################
@@ -57,21 +57,10 @@ p_vl = 0.05
 t_anneal = 5000
 
 ################################################################################
-# Parse command-line arguments.
-################################################################################
-
-parser = ArgumentParser(description=__doc__)
-parser.add_argument('net_type', help='the type of network to train')
-parser.add_argument('data_path', help='the dataset to use')
-parser.add_argument('net_path', help='the output directory')
-parser.add_argument('--use_em', help='use error mapping', action='store_true')
-args = parser.parse_args()
-
-################################################################################
 # Load the dataset.
 ################################################################################
 
-dataset = Dataset(args.data_path, n_vl)
+dataset = Dataset('data/hybrid.npz', n_vl)
 x0_shape = dataset.x0_shape
 y_shape = dataset.y_shape
 
@@ -122,23 +111,20 @@ def sr_chain(n_tf):
             root=root)
     return make_net
 
-def dr_chain(type_, k_cpt=0.0):
+def dr_chain(type_, **hypers):
     def make_net():
         root = rcm(-1, reg())
         for i in reversed(range(len(arch) - 1)):
             root = rcm(i, reg(), root)
         root = pyr(root)
         return type_(
-            x0_shape=x0_shape,
-            y_shape=y_shape,
-            k_cpt=k_cpt, root=root)
+            x0_shape=x0_shape, y_shape=y_shape,
+            root=root, **hypers)
     return make_net
 
-def dr_tree(type_, k_cpt=0.0):
-    return lambda: type_(
-        x0_shape=x0_shape,
-        y_shape=y_shape,
-        k_cpt=k_cpt, root=(pyr(
+def dr_tree(type_, **hypers):
+    def make_net():
+        root = pyr(
             rcm(0, reg(),
             rcm(1, reg(),
                 rcm(2, reg(),
@@ -152,77 +138,117 @@ def dr_tree(type_, k_cpt=0.0):
                     rcm(4, reg(),
                     rcm(5, reg())),
                     rcm(4, reg(),
-                    rcm(5, reg())))))))))
+                    rcm(5, reg())))))))
+        return type_(
+            x0_shape=x0_shape, y_shape=y_shape,
+            root=root, **hypers)
+    return make_net
 
 ################################################################################
 # Define experiments.
 ################################################################################
 
+sr_hypers = lambda net, t: {}
+ds_hypers = lambda net, t: {net.ϵ: 0.5 / 2**(t / 10000)}
+ac_hypers = lambda net, t: {net.ϵ: 0.5 / 2**(t / 10000)}
+cr_hypers = lambda net, t: {net.τ: 0.1 / 2**(t / 15000)}
+
 experiments = {
     'sr-chains': Ns(
         nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
-        hypers=(lambda net, t: {})),
+        augment=True, use_em=False, hypers=sr_hypers),
+    'sr-chains-noaug': Ns(
+        nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
+        augment=False, use_em=False, hypers=sr_hypers),
     'ds-chains': Ns(
-        nets=[dr_chain(DSNet, k) for k in k_cpts],
-        hypers=(lambda net, t: {net.ϵ: 0.5 / 2**(t / 10000)})),
+        nets=[dr_chain(DSNet, k_cpt=k) for k in k_cpts],
+        augment=True, use_em=False, hypers=ds_hypers),
     'cr-chains': Ns(
-        nets=[dr_chain(CRNet, k) for k in k_cpts],
-        hypers=(lambda net, t: {net.τ: 0.1 / 2**(t / 15000)})),
-    'ds-trees': Ns(
-        nets=[dr_tree(DSNet, k) for k in k_cpts],
-        hypers=(lambda net, t: {net.ϵ: 0.5 / 2**(t / 10000)})),
-    'cr-trees': Ns(
-        nets=[dr_tree(CRNet, k) for k in k_cpts],
-        hypers=(lambda net, t: {net.τ: 0.1 / 2**(t / 15000)}))}
+        nets=[dr_chain(CRNet, k_cpt=k) for k in k_cpts],
+        augment=True, use_em=False, hypers=cr_hypers),
+    'ac-chains': Ns(
+        nets=[dr_chain(AcNet, k_cpt=k) for k in k_cpts],
+        augment=True, use_em=False, hypers=ac_hypers),
+    'ac-chains-opt': Ns(
+        nets=[dr_chain(AcNet, k_cpt=k, optimistic=True) for k in k_cpts],
+        augment=True, use_em=False, hypers=ac_hypers),
+    'ac-chains-noaug': Ns(
+        nets=[dr_chain(AcNet, k_cpt=k) for k in k_cpts],
+        augment=False, use_em=False, hypers=ac_hypers),
+    'ac-chains-noaug-em': Ns(
+        nets=[dr_chain(AcNet, k_cpt=k) for k in k_cpts],
+        augment=True, use_em=True, hypers=ac_hypers),
+    'ac-trees': Ns(
+        nets=[dr_tree(CRNet, k_cpt=k) for k in k_cpts],
+        augment=True, use_em=False, hypers=ac_hypers)}
 
 ################################################################################
 # Define a training function.
 ################################################################################
+
+def p_cor_by_cls(net, ℓ):
+    return tf.expand_dims(ℓ.p_ev * ℓ.δ_cor, 1) * net.y
+
+def p_inc_by_cls(net, ℓ):
+    return tf.expand_dims(ℓ.p_ev * (1 - ℓ.δ_cor), 1) * net.y
 
 def state_tensors(net):
     tot_n_ops = lambda ℓ: ℓ.n_ops + getattr(ℓ.router, 'n_ops', 0)
     return {(net, 'acc'): sum(ℓ.p_ev * ℓ.δ_cor for ℓ in net.leaves),
             (net, 'moc'): sum(ℓ.p_ev * tot_n_ops(ℓ) for ℓ in net.layers),
             **{(ℓ, 'p_cor'): ℓ.p_ev * ℓ.δ_cor for ℓ in net.leaves},
-            **{(ℓ, 'p_inc'): ℓ.p_ev * (1 - ℓ.δ_cor) for ℓ in net.leaves}}
+            **{(ℓ, 'p_inc'): ℓ.p_ev * (1 - ℓ.δ_cor) for ℓ in net.leaves},
+            **{(ℓ, 'p_cor_by_cls'): p_cor_by_cls(net, ℓ) for ℓ in net.leaves},
+            **{(ℓ, 'p_inc_by_cls'): p_inc_by_cls(net, ℓ) for ℓ in net.leaves},
+            **{(ℓ, 'c_err'): ℓ.c_err for ℓ in net.leaves},
+            **{(ℓ, 'c_err_cor'): ℓ.c_err_cor for ℓ in net.leaves
+               if hasattr(ℓ, 'c_err_cor')}}
 
-def train(dst, net, hypers):
+def train(expt_name, i):
+    expt = experiments[expt_name]
+    net = expt.nets[i]()
     net_state = state_tensors(net)
+    tf.initialize_all_variables().run()
     for t in range(n_iter):
-        x0, y = dataset.augmented_training_batch(batch_size)
-        print('  --- Iteration %i ---\r' % (t + 1),
-              end='', flush=True)
+        x0, y = (
+            dataset.augmented_training_batch(batch_size) if expt.augment
+            else dataset.training_batch(batch_size))
+        ϕ = expt.hypers(net, t)
+        print('  --- Iteration %i ---\r' % (t + 1), end='', flush=True)
         net.train.run({
             net.x0: x0, net.y: y, net.mode: 'tr',
-            net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal),
-            **hypers(net, t)})
-        if args.use_em and rand.rand() < p_vl:
+            net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal), **ϕ})
+        if expt.use_em and rand.rand() < p_vl:
             x0, y = dataset.validation_batch(batch_size)
-            net.validate.run({
-                net.x0: x0, net.y: y, net.mode: 'vl',
-                **hypers(net, t)})
+            net.validate.run({net.x0: x0, net.y: y, net.mode: 'vl', **ϕ})
         if (t + 1) % t_log == 0:
-            desc = render_net_desc(
-                net_desc(net, dataset, hypers(net, t), net_state),
-                '%s — Epoch %i' % (dst, t + 1))
-            makedirs(dirname(dst), exist_ok=True)
-            with open(dst[:-4] + '.log', 'a+') as f:
-                f.write(desc + '\n')
-            print(desc)
-    makedirs(dirname(dst), exist_ok=True)
-    write_net(dst, net)
+            desc = net_desc(net, dataset, ϕ, net_state)
+            text = render_net_desc(desc, '%s — Epoch %i' % (expt_name, t + 1))
+            makedirs('net/%s' % expt_name, exist_ok=True)
+            np.save('net/%s/%.4i-stats.npy' % (expt_name, i), desc)
+            with open('net/%s/%.4i-log.txt' % (expt_name, i), 'a+') as f:
+                f.write(text + '\n')
+            print(text)
+    makedirs('net/%s' % expt_name, exist_ok=True)
+    write_net('net/%s/%.4i.npy' % (expt_name, i), net)
+
+################################################################################
+# Parse command-line arguments.
+################################################################################
+
+parser = ArgumentParser(description=__doc__)
+parser.add_argument('expt', help='the experiment to perform',
+                    choices=experiments.keys())
+
+args = parser.parse_args()
 
 ################################################################################
 # Train networks.
 ################################################################################
 
-expt = experiments[args.net_type]
-
-for i, net_constr in enumerate(expt.nets):
+for i in range(len(experiments[args.expt].nets)):
     with tf.Graph().as_default():
         sess = tf.Session(config=tf.ConfigProto(
             gpu_options=tf.GPUOptions(allow_growth=True)))
         with sess.as_default():
-            net = net_constr()
-            tf.initialize_all_variables().run()
-            train(join(args.net_path, '%.4i.npy' % i), net, expt.hypers)
+            train(args.expt, i)

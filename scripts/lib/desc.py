@@ -41,7 +41,10 @@ def net_desc(net, dataset, hypers={}, state={}):
 
 def render_stats(stats):
     return (
-        '(%s)' % '; '.join('%s=%.3g' % i for i in sorted(stats.items()))
+        '(%s)' % '; '.join(
+            '%s=%.3g' % i
+            for i in sorted(stats.items())
+            if np.ndim(i) == 0)
         if len(stats) > 0 else '')
 
 def render_layer_desc(desc, stats_key):
