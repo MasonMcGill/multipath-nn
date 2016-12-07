@@ -4,7 +4,6 @@ Train statically- or dynamically-routed networks.
 '''
 from argparse import ArgumentParser
 from os import makedirs
-from os.path import dirname, join
 from types import SimpleNamespace as Ns
 
 import numpy as np
@@ -32,6 +31,9 @@ k_cpts = [0.0, 1e-9, 2e-9, 4e-9, 8e-9, 1.6e-8, 3.2e-8, 6.4e-8]
 k_l2 = 1e-4
 σ_w = 1
 
+x0_shape = (32, 32, 3)
+y_shape = (8,)
+
 arch = [
     [16, 16, 16, 16],
     [16, 16, 16, 16],
@@ -55,14 +57,6 @@ p_vl = 0.05
 
 λ_lrn_0 = 0.1
 t_anneal = 5000
-
-################################################################################
-# Load the dataset.
-################################################################################
-
-dataset = Dataset('data/hybrid.npz', n_vl)
-x0_shape = dataset.x0_shape
-y_shape = dataset.y_shape
 
 ################################################################################
 # Define network components.
@@ -183,7 +177,24 @@ experiments = {
         augment=True, use_em=False, hypers=ac_hypers)}
 
 ################################################################################
-# Define a training function.
+# Parse command-line arguments.
+################################################################################
+
+parser = ArgumentParser(description=__doc__)
+parser.add_argument('expt', help='the experiment to perform',
+                    choices=experiments.keys())
+
+expt_name = parser.parse_args().expt
+expt = experiments[expt_name]
+
+################################################################################
+# Load the dataset.
+################################################################################
+
+dataset = Dataset('data/hybrid.npz', expt.use_em * n_vl)
+
+################################################################################
+# Train networks.
 ################################################################################
 
 def p_cor_by_cls(net, ℓ):
@@ -204,7 +215,7 @@ def state_tensors(net):
             **{(ℓ, 'c_err_cor'): ℓ.c_err_cor for ℓ in net.leaves
                if hasattr(ℓ, 'c_err_cor')}}
 
-def train(expt_name, i):
+def train_net(i):
     expt = experiments[expt_name]
     net = expt.nets[i]()
     net_state = state_tensors(net)
@@ -232,23 +243,9 @@ def train(expt_name, i):
     makedirs('net/%s' % expt_name, exist_ok=True)
     write_net('net/%s/%.4i.npy' % (expt_name, i), net)
 
-################################################################################
-# Parse command-line arguments.
-################################################################################
-
-parser = ArgumentParser(description=__doc__)
-parser.add_argument('expt', help='the experiment to perform',
-                    choices=experiments.keys())
-
-args = parser.parse_args()
-
-################################################################################
-# Train networks.
-################################################################################
-
-for i in range(len(experiments[args.expt].nets)):
+for i in range(len(expt.nets)):
     with tf.Graph().as_default():
         sess = tf.Session(config=tf.ConfigProto(
             gpu_options=tf.GPUOptions(allow_growth=True)))
         with sess.as_default():
-            train(args.expt, i)
+            train_net(i)
