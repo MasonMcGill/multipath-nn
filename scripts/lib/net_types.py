@@ -127,10 +127,9 @@ def route_sinks_ds_dyn(ℓ, opts, net):
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
     w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
-    x_route = ℓ.router.x + opts.τ * np.log(w_struct)
-    π_tr = ((1 - opts.ϵ) * tf.nn.softmax(x_route / opts.τ) + opts.ϵ * w_struct)
+    π_tr = (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ) + opts.ϵ * w_struct
     π_ev = tf.to_float(tf.equal(
-        tf.expand_dims(tf.to_int32(tf.argmax(x_route, 1)), 1),
+        tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
     for i, s in enumerate(ℓ.sinks):
         route_ds(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts, net)
@@ -189,10 +188,9 @@ def route_sinks_ac_dyn(ℓ, opts, net):
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
     w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
-    x_route = ℓ.router.x + opts.τ * np.log(w_struct)
-    π_tr = ((1 - opts.ϵ) * tf.nn.softmax(x_route / opts.τ) + opts.ϵ * w_struct)
+    π_tr = (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ) + opts.ϵ * w_struct
     π_ev = tf.to_float(tf.equal(
-        tf.expand_dims(tf.to_int32(tf.argmax(x_route, 1)), 1),
+        tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
     for i, s in enumerate(ℓ.sinks):
         route_ac(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts, net)
@@ -264,10 +262,9 @@ def route_sinks_cr_dyn(ℓ, opts, net):
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
     w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
-    x_route = ℓ.router.x + opts.τ * np.log(w_struct)
-    π_tr = ((1 - opts.ϵ) * tf.nn.softmax(x_route / opts.τ) + opts.ϵ * w_struct)
+    π_tr = (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ) + opts.ϵ * w_struct
     π_ev = tf.to_float(tf.equal(
-        tf.expand_dims(tf.to_int32(tf.argmax(x_route, 1)), 1),
+        tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
     for i, s in enumerate(ℓ.sinks):
         route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts, net)
@@ -280,7 +277,7 @@ def route_sinks_cr_dyn(ℓ, opts, net):
         + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
     ℓ.c_cre = (
         opts.k_cre * sum(
-            tf.square(x_route[:, i] + tf.stop_gradient(
+            tf.square(ℓ.router.x[:, i] + tf.stop_gradient(
                 s.c_opt if opts.optimistic else s.c_ev))
             for i, s in enumerate(ℓ.sinks)))
 
