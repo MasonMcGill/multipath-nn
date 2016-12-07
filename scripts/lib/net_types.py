@@ -170,6 +170,81 @@ class DSNet(Net):
         self.validate = tf.group(*(ℓ.update_μ_vl for ℓ in self.layers))
 
 ################################################################################
+# Actor Networks
+################################################################################
+
+def route_sinks_ac_stat(ℓ, opts, net):
+    for s in ℓ.sinks:
+        route_ac(s, ℓ.p_tr, ℓ.p_ev, opts, net)
+    ℓ.c_ev = (
+        ℓ.c_err + opts.k_cpt * ℓ.n_ops
+        + sum(s.c_ev for s in ℓ.sinks))
+    ℓ.c_opt = (
+        ℓ.c_err + opts.k_cpt * ℓ.n_ops
+        + sum(s.c_opt for s in ℓ.sinks))
+    ℓ.c_rtr = 0
+
+def route_sinks_ac_dyn(ℓ, opts, net):
+    def n_leaves(ℓ): return (
+        1 if len(ℓ.sinks) == 0
+        else sum(map(n_leaves, ℓ.sinks)))
+    w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
+    x_route = ℓ.router.x + opts.τ * np.log(w_struct)
+    π_tr = ((1 - opts.ϵ) * tf.nn.softmax(x_route / opts.τ) + opts.ϵ * w_struct)
+    π_ev = tf.to_float(tf.equal(
+        tf.expand_dims(tf.to_int32(tf.argmax(x_route, 1)), 1),
+        tf.range(len(ℓ.sinks))))
+    for i, s in enumerate(ℓ.sinks):
+        route_ac(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts, net)
+    ℓ.c_ev = (
+        ℓ.c_err + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+        + sum(π_ev[:, i] * s.c_ev
+              for i, s in enumerate(ℓ.sinks)))
+    ℓ.c_opt = (
+        ℓ.c_err + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+        + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
+    ℓ.c_rtr = (
+        opts.k_rtr * sum(
+            π_tr[:, i] * tf.stop_gradient(
+                s.c_opt if opts.optimistic else s.c_ev)
+            for i, s in enumerate(ℓ.sinks)))
+
+def route_ac(ℓ, p_tr, p_ev, opts, net):
+    ℓ.p_tr = p_tr
+    ℓ.p_ev = p_ev
+    add_error_mapping(net, ℓ)
+    if len(ℓ.sinks) < 2: route_sinks_ac_stat(ℓ, opts, net)
+    else: route_sinks_ac_dyn(ℓ, opts, net)
+
+class AcNet(Net):
+    default_hypers = Ns(
+        k_cpt=0.0, k_rtr=1.0, ϵ=1e-3, τ=1.0,
+        λ_em=0.9, λ_lrn=1e-3, μ_lrn=0.9,
+        α_rtr=1.0, optimistic=False)
+
+    def link(self):
+        super().link()
+        ϕ = self.hypers
+        self.λ_lrn = tf.placeholder_with_default(ϕ.λ_lrn, ())
+        self.μ_lrn = tf.placeholder_with_default(ϕ.μ_lrn, ())
+        self.ϵ = tf.placeholder_with_default(ϕ.ϵ, ())
+        self.τ = tf.placeholder_with_default(ϕ.τ, ())
+        n_pts = tf.shape(self.x0)[0]
+        route_ac(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)),
+                 Ns(ϵ=self.ϵ, τ=self.τ, k_cpt=ϕ.k_cpt, k_rtr=ϕ.k_rtr,
+                    optimistic=ϕ.optimistic), self)
+        c_err = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_err for ℓ in self.layers)
+        c_rtr = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_rtr for ℓ in self.layers)
+        c_mod = sum(tf.stop_gradient(ℓ.p_tr) * (ℓ.c_mod + ℓ.router.c_mod)
+                    for ℓ in self.switches)
+        c_tr = c_err + c_rtr + c_mod
+        opt = tf.train.MomentumOptimizer(self.λ_lrn, self.μ_lrn)
+        with tf.control_dependencies([ℓ.update_μ_tr for ℓ in self.layers]):
+            self.train = minimize_expected(
+                self, tf.reduce_mean(c_tr), opt, ϕ.α_rtr)
+        self.validate = tf.group(*(ℓ.update_μ_vl for ℓ in self.layers))
+
+################################################################################
 # Cost Regression Networks
 ################################################################################
 
