@@ -176,10 +176,10 @@ def route_sinks_ac_stat(ℓ, opts, net):
     for s in ℓ.sinks:
         route_ac(s, ℓ.p_tr, ℓ.p_ev, opts, net)
     ℓ.c_ev = (
-        ℓ.c_err + opts.k_cpt * ℓ.n_ops
+        ℓ.c_err_cor + opts.k_cpt * ℓ.n_ops
         + sum(s.c_ev for s in ℓ.sinks))
     ℓ.c_opt = (
-        ℓ.c_err + opts.k_cpt * ℓ.n_ops
+        ℓ.c_err_cor + opts.k_cpt * ℓ.n_ops
         + sum(s.c_opt for s in ℓ.sinks))
     ℓ.c_rtr = 0
 
@@ -195,11 +195,11 @@ def route_sinks_ac_dyn(ℓ, opts, net):
     for i, s in enumerate(ℓ.sinks):
         route_ac(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts, net)
     ℓ.c_ev = (
-        ℓ.c_err + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+        ℓ.c_err_cor + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
         + sum(π_ev[:, i] * s.c_ev
               for i, s in enumerate(ℓ.sinks)))
     ℓ.c_opt = (
-        ℓ.c_err + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+        ℓ.c_err_cor + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
         + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
     ℓ.c_rtr = (
         opts.k_rtr * sum(
@@ -250,10 +250,10 @@ def route_sinks_cr_stat(ℓ, opts, net):
     for s in ℓ.sinks:
         route_cr(s, ℓ.p_tr, ℓ.p_ev, opts, net)
     ℓ.c_ev = (
-        ℓ.c_err + opts.k_cpt * ℓ.n_ops
+        ℓ.c_err_cor + opts.k_cpt * ℓ.n_ops
         + sum(s.c_ev for s in ℓ.sinks))
     ℓ.c_opt = (
-        ℓ.c_err + opts.k_cpt * ℓ.n_ops
+        ℓ.c_err_cor + opts.k_cpt * ℓ.n_ops
         + sum(s.c_opt for s in ℓ.sinks))
     ℓ.c_cre = 0
 
@@ -269,11 +269,11 @@ def route_sinks_cr_dyn(ℓ, opts, net):
     for i, s in enumerate(ℓ.sinks):
         route_cr(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i], opts, net)
     ℓ.c_ev = (
-        ℓ.c_err + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+        ℓ.c_err_cor + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
         + sum(π_ev[:, i] * s.c_ev
               for i, s in enumerate(ℓ.sinks)))
     ℓ.c_opt = (
-        ℓ.c_err + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+        ℓ.c_err_cor + opts.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
         + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
     ℓ.c_cre = (
         opts.k_cre * sum(
