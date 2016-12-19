@@ -284,6 +284,13 @@ class SuperclassCrossEntropyError(Layer):
         self.δ_cor = tf.to_float(tf.equal(
             tf.argmax(self.x, 1), tf.argmax(y_sup, 1)))
 
+class ActivityError(Layer):
+    default_hypers = Ns(α=0.0)
+
+    def link(self, x, y, mode):
+        super().link(x, y, mode)
+        self.c_mod = self.hypers.α * tf.reduce_sum(tf.square(x))
+
 ################################################################################
 # Compound Layers
 ################################################################################
