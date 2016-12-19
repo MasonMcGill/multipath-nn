@@ -26,14 +26,12 @@ def decode_layer(record):
         **{k: v for k, v in record['hypers'].items()})
 
 def load_params(layer, record):
-    if layer is not None:
-        for k, v in record['params'].items():
-            tf.assign(getattr(layer.params, k), v).eval()
-        load_params(layer.router, record['router'])
-        for ℓ, r in zip(layer.comps, record['comps']):
-            load_params(ℓ, r)
-        for ℓ, r in zip(layer.sinks, record['sinks']):
-            load_params(ℓ, r)
+    return tf.no_op() if layer is None else tf.group(
+        load_params(layer.router, record['router']),
+        *(load_params(ℓ, r) for ℓ, r in zip(layer.comps, record['comps'])),
+        *(load_params(ℓ, r) for ℓ, r in zip(layer.sinks, record['sinks'])),
+        *(tf.assign(getattr(layer.params, k), v)
+          for k, v in record['params'].items()))
 
 ################################################################################
 # Network Serialization/Deserialization
@@ -49,9 +47,10 @@ def decode_net(record):
     type_ = getattr(lib.net_types, record['type'])
     root = decode_layer(record['root'])
     net = type_(root=root, **record['hypers'])
-    load_params(net.root, record['root'])
-    for k, v in record['params'].items():
-        tf.assign(getattr(net.params, k), v).eval()
+    load_params(net.root, record['root']).run()
+    tf.group(*(
+        tf.assign(getattr(net.params, k), v)
+        for k, v in record['params'].items())).run()
     return net
 
 def write_net(path, net):
