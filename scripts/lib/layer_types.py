@@ -289,7 +289,8 @@ class ActivityError(Layer):
 
     def link(self, x, y, mode):
         super().link(x, y, mode)
-        self.c_mod = self.hypers.α * tf.reduce_sum(tf.square(x))
+        dims = tuple(range(1, len(x.get_shape())))
+        self.c_mod = self.hypers.α * tf.reduce_sum(tf.square(x), dims)
 
 ################################################################################
 # Compound Layers
