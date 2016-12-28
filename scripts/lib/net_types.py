@@ -126,8 +126,11 @@ def route_sinks_ds_dyn(ℓ, opts, net):
     def n_leaves(ℓ): return (
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
-    w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
-    π_tr = (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ) + opts.ϵ * w_struct
+    def p_tr_ϵ(ℓ):
+        return opts.ϵ * n_leaves(ℓ) / n_leaves(net.root)
+    π_tr = (
+        (1 - p_tr_ϵ(ℓ) / ℓ.p_tr[:, None]) * tf.nn.softmax(ℓ.router.x / opts.τ)
+        + list(map(p_tr_ϵ, ℓ.sinks)) / ℓ.p_tr[:, None])
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
@@ -143,7 +146,7 @@ def route_ds(ℓ, p_tr, p_ev, opts, net):
 
 class DSNet(Net):
     default_hypers = Ns(
-        k_cpt=0.0, ϵ=1e-3, τ=1.0, λ_em=0.9,
+        k_cpt=0.0, ϵ=1e-6, τ=1.0, λ_em=0.9,
         λ_lrn=1e-3, μ_lrn=0.9, α_rtr=1.0)
 
     def link(self):
@@ -187,8 +190,11 @@ def route_sinks_ac_dyn(ℓ, opts, net):
     def n_leaves(ℓ): return (
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
-    w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
-    π_tr = (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ) + opts.ϵ * w_struct
+    def p_tr_ϵ(ℓ):
+        return opts.ϵ * n_leaves(ℓ) / n_leaves(net.root)
+    π_tr = (
+        (1 - p_tr_ϵ(ℓ) / ℓ.p_tr[:, None]) * tf.nn.softmax(ℓ.router.x / opts.τ)
+        + list(map(p_tr_ϵ, ℓ.sinks)) / ℓ.p_tr[:, None])
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
@@ -216,7 +222,7 @@ def route_ac(ℓ, p_tr, p_ev, opts, net):
 
 class AcNet(Net):
     default_hypers = Ns(
-        k_cpt=0.0, k_rtr=1.0, ϵ=1e-3, τ=1.0,
+        k_cpt=0.0, k_rtr=1.0, ϵ=1e-6, τ=1.0,
         λ_em=0.9, λ_lrn=1e-3, μ_lrn=0.9,
         α_rtr=1.0, optimistic=False)
 
@@ -261,8 +267,11 @@ def route_sinks_cr_dyn(ℓ, opts, net):
     def n_leaves(ℓ): return (
         1 if len(ℓ.sinks) == 0
         else sum(map(n_leaves, ℓ.sinks)))
-    w_struct = np.divide(list(map(n_leaves, ℓ.sinks)), n_leaves(ℓ))
-    π_tr = (1 - opts.ϵ) * tf.nn.softmax(ℓ.router.x / opts.τ) + opts.ϵ * w_struct
+    def p_tr_ϵ(ℓ):
+        return opts.ϵ * n_leaves(ℓ) / n_leaves(net.root)
+    π_tr = (
+        (1 - p_tr_ϵ(ℓ) / ℓ.p_tr[:, None]) * tf.nn.softmax(ℓ.router.x / opts.τ)
+        + list(map(p_tr_ϵ, ℓ.sinks)) / ℓ.p_tr[:, None])
     π_ev = tf.to_float(tf.equal(
         tf.expand_dims(tf.to_int32(tf.argmax(ℓ.router.x, 1)), 1),
         tf.range(len(ℓ.sinks))))
@@ -290,7 +299,7 @@ def route_cr(ℓ, p_tr, p_ev, opts, net):
 
 class CRNet(Net):
     default_hypers = Ns(
-        k_cpt=0.0, k_cre=1e-3, ϵ=1e-3, τ=0.01,
+        k_cpt=0.0, k_cre=1e-3, ϵ=1e-6, τ=0.01,
         λ_em=0.9, λ_lrn=1e-3, μ_lrn=0.9,
         α_rtr=1.0, optimistic=False)
 
