@@ -51,24 +51,15 @@ def full_set(x0, y, n):
 ################################################################################
 
 class Dataset:
-    def __init__(self, path, n_vl=0):
+    def __init__(self, path):
         archive = np.load(path)['arr_0'][()]
         self.x0_tr = archive['x0_tr']
         self.x0_ts = archive['x0_ts']
         self.y_tr = archive['y_tr']
         self.y_ts = archive['y_ts']
         self.m_sym = archive['m_sym']
-        if n_vl > 0:
-            rand.seed(0)
-            order = rand.permutation(len(self.x0_tr))
-            self.x0_vl = np.take(self.x0_tr, order[:n_vl], axis=0)
-            self.y_vl = np.take(self.y_tr, order[:n_vl], axis=0)
-            self.x0_tr = np.take(self.x0_tr, order[n_vl:], axis=0)
-            self.y_tr = np.take(self.y_tr, order[n_vl:], axis=0)
-            rand.seed(None)
-        else:
-            self.x0_vl = self.x0_tr[:0]
-            self.y_vl = self.y_tr[:0]
+        self.x0_vl = self.x0_tr[:0]
+        self.y_vl = self.y_tr[:0]
 
     @property
     def x0_shape(self):
@@ -84,17 +75,11 @@ class Dataset:
     def training_batch(self, n=128):
         return batch(self.x0_tr, self.y_tr, n)
 
-    def validation_batch(self, n=128):
-        return batch(self.x0_vl, self.y_vl, n)
-
     def test_batch(self, n=128):
         return batch(self.x0_ts, self.y_ts, n)
 
     def training_set(self, n=128):
         yield from full_set(self.x0_tr, self.y_tr, n)
-
-    def validation_set(self, n=128):
-        yield from full_set(self.x0_vl, self.y_vl, n)
 
     def test_set(self, n=128):
         yield from full_set(self.x0_ts, self.y_ts, n)
