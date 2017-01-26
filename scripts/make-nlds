@@ -37,8 +37,9 @@ makedirs('figures', exist_ok=True)
 # Generate node-link diagrams.
 ################################################################################
 
-cls_labels = ['0', '1', '2', '3',
-              'Airplane', 'Automobile', 'Deer', 'Horse']
+cls_labels = [
+    '0', '1', '2', '3', '4',
+    'Airplane', 'Automobile', 'Deer', 'Frog', 'Horse']
 
 def nld_bounds(ℓ, x, y, r):
     x0 = x; x1 = x
@@ -192,29 +193,3 @@ make_chain_cls_nld('cls-nld-ds-chains.svg', 'one-true-ds-chains')
 make_tree_acc_nld('acc-nld-cr-tree.pdf', 'one-true-cr-trees', 0)
 make_tree_cls_nld('cls-nld-cr-tree.pdf', 'one-true-cr-trees', 0)
 make_tree_cls_nld('cls-nld-cr-tree.svg', 'one-true-cr-trees', 0)
-
-################################################################################
-# Generate a per-layer mean error plot.
-################################################################################
-
-c_err_tr = []
-c_err_vl = []
-c_err_cor = []
-
-ℓ = logs['ds-chains-em'][1]['root']
-while len(ℓ['sinks']) > 1:
-    c_err_tr.append(ℓ['sinks'][0]['stats_tr']['c_err'])
-    c_err_vl.append(ℓ['sinks'][0]['stats_ts']['c_err'])
-    c_err_cor.append(ℓ['sinks'][0]['stats_tr']['c_err_cor'])
-    ℓ = ℓ['sinks'][1]
-
-plt.figure(figsize=(6, 4))
-plt.xlabel('Layer Index')
-plt.ylabel('Mean Cross-Entropy Error')
-plt.plot(c_err_tr, label='Training Error')
-plt.plot(c_err_vl, label='Validation Error')
-plt.plot(c_err_cor, label='Corrected Training Error',
-         color=sns.color_palette()[5])
-plt.legend()
-plt.tight_layout()
-plt.savefig('figures/mean-error.png', transparent=True)
