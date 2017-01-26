@@ -68,8 +68,7 @@ def pyr(*sinks):
     return Chain(
         name='ToPyramid', sinks=sinks,
         router=router(len(sinks)), comps=[
-            ToPyramid(n_scales=len(arch[0])),
-            MultiscaleLLN(), MultiscaleBatchNorm()])
+            ToPyramid(n_scales=len(arch[0]))])
 
 def rcm(i, *sinks):
     return Chain(
