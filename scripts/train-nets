@@ -17,7 +17,7 @@ from lib.layer_types import (
     MultiscaleConvMax, MultiscaleLLN, MultiscaleRect, Rect, Select,
     Softmax, ToPyramid)
 
-from lib.net_types import AcNet, CRNet, DSNet, SRNet
+from lib.net_types import CRNet, DSNet, SRNet
 from lib.serdes import write_net
 
 ################################################################################
@@ -140,22 +140,22 @@ def dr_tree(type_, **hypers):
 
 sr_hypers = lambda net, t: {}
 cr_hypers = lambda net, t: {net.τ: 0.1 / 2**(t / 20000)}
-ac_hypers = lambda net, t: {net.τ: 1.0 / 2**(t / 20000)}
-ac_hypers_nokdec = lambda net, t: {net.τ: 1.0 / 2**(t / 20000), net.k_dec: 0}
+ds_hypers = lambda net, t: {net.τ: 1.0 / 2**(t / 20000)}
+ds_hypers_nokdec = lambda net, t: {net.τ: 1.0 / 2**(t / 20000), net.k_dec: 0}
 
 experiments = {
-    'sr-chains-lcn': Ns(
+    'sr-chains': Ns(
         nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
         hypers=sr_hypers),
     'ds-chains-nolln-hightau': Ns(
         nets=[dr_chain(DSNet, k_cpt=k) for k in k_cpts],
-        hypers=ac_hypers),
+        hypers=ds_hypers),
     'ds-chains-notalr': Ns(
         nets=[dr_chain(DSNet, k_cpt=k, talr=False) for k in k_cpts],
-        hypers=ac_hypers),
+        hypers=ds_hypers),
     'ds-trees-long': Ns(
         nets=[dr_tree(DSNet, k_cpt=k) for k in k_cpts],
-        hypers=ac_hypers),
+        hypers=ds_hypers),
     'cr-chains-nolln-hightau': Ns(
         nets=[dr_chain(CRNet, k_cpt=k) for k in k_cpts],
         hypers=cr_hypers),
