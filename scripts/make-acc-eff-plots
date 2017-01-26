@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+'''
+Generate accuracy/efficiency plots.
+'''
+from glob import glob
+from os import listdir, makedirs
+from os.path import splitext
+
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+
+################################################################################
+# Load experiment results.
+################################################################################
+
+logs = {}
+
+for log_name in listdir('nets'):
+    log_paths = glob('nets/%s/*-stats.npy' % log_name)
+    logs[splitext(log_name)[0]] = [np.load(p)[()] for p in sorted(log_paths)]
+
+errs = {name: [1 - net['stats_ts']['acc'] for net in log]
+        for name, log in logs.items()}
+mocs = {name: [net['stats_ts']['moc'] for net in log]
+        for name, log in logs.items()}
+
+################################################################################
+# Ensure that the output directory exists.
+################################################################################
+
+makedirs('figures', exist_ok=True)
+
+################################################################################
+# Generate accuracy/efficiency plots.
+################################################################################
+
+def make_acc_eff_plot(dst, ylim, targets):
+    plt.figure(figsize=(6, 4))
+    plt.xlabel('Mean Op Count')
+    plt.ylabel('Error Rate')
+    for src, label in targets:
+        plt.plot(mocs[src], errs[src], label=label)
+    plt.ylim(ylim)
+    plt.legend(loc='upper right')
+    plt.tight_layout()
+    plt.savefig(dst)
+    plt.close()
+
+make_acc_eff_plot('figures/acc-eff-0.svg', (0, 0.07), [
+    ('sr-chains', 'Statically-Routed Chains'),
+    ('ds-chains', 'Actor Chains'),
+    ('cr-chains', 'Pragmatic Critic Chains'),
+    ('cr-chains-opt', 'Optimistic Critic Chains')])
+make_acc_eff_plot('figures/acc-eff-1.svg', (0, 0.07), [
+    ('sr-chains', 'Statically-Routed Chains'),
+    ('ds-chains', 'Actor Chains'),
+    ('ds-chains-notalr', 'Actor Chains, no TALR')])
+make_acc_eff_plot('figures/acc-eff-2.svg', (0, 0.07), [
+    ('sr-chains', 'Statically-Routed Chains'),
+    ('cr-chains', 'Pragmatic Critic Chains'),
+    ('cr-chains-notalr', 'Pragmatic Critic Chains, no TALR')])
+make_acc_eff_plot('figures/acc-eff-3.svg', (0, 0.07), [
+    ('sr-chains', 'Statically-Routed Chains'),
+    ('ds-chains', 'Actor Chains'),
+    ('ds-chains-regd', 'Actor Chains, Regularized ̂d')])
+make_acc_eff_plot('figures/acc-eff-4.svg', (0, 0.07), [
+    ('sr-chains', 'Statically-Routed Chains'),
+    ('ds-chains', 'Actor Chains'),
+    ('ds-trees', 'Actor Trees')])
+make_acc_eff_plot('figures/acc-eff-5.svg', (0, 0.07), [
+    ('sr-chains', 'Statically-Routed Chains'),
+    ('cr-chains-nest', 'Pragmatic Critic Chains'),
+    ('cr-trees-nest', 'Pragmatic Critic Trees')])

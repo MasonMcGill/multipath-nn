@@ -7,9 +7,6 @@ from os import listdir, makedirs
 from os.path import basename, splitext
 
 import matplotlib as mpl
-mpl.use('Agg')
-
-import matplotlib as mpl
 import matplotlib.patches as pch
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,9 +18,9 @@ import seaborn as sns
 
 logs = {}
 
-for log_name in listdir('stats'):
-    logs[splitext(log_name)[0]] = (
-        [np.load(p)[()] for p in sorted(glob('stats/%s/*' % log_name))])
+for log_name in listdir('nets'):
+    log_paths = glob('nets/%s/*-stats.npy' % log_name)
+    logs[splitext(log_name)[0]] = [np.load(p)[()] for p in sorted(log_paths)]
 
 errs = {name: [1 - net['stats_ts']['acc'] for net in log]
         for name, log in logs.items()}
@@ -35,42 +32,6 @@ mocs = {name: [net['stats_ts']['moc'] for net in log]
 ################################################################################
 
 makedirs('figures', exist_ok=True)
-
-################################################################################
-# Generate accuracy/efficiency plots.
-################################################################################
-
-plt.figure(figsize=(6, 4))
-plt.xlabel('Mean Op Count')
-plt.ylabel('Error Rate')
-plt.plot(
-    mocs['one-true-sr-chains'],
-    errs['one-true-sr-chains'],
-    label='Statically-Routed Chains',
-    color=sns.color_palette()[0])
-plt.plot(
-    mocs['one-true-ds-chains'],
-    errs['one-true-ds-chains'],
-    label='Decision-Softening Chains',
-    color=sns.color_palette()[1],
-    markeredgewidth=0)
-plt.plot(
-    mocs['one-true-cr-chains'],
-    errs['one-true-cr-chains'],
-    label='Cost-Regression Chains',
-    color=sns.color_palette()[2],
-    markeredgewidth=0)
-plt.plot(
-    mocs['one-true-cr-trees'],
-    errs['one-true-cr-trees'],
-    'o', label='Cost-Regression Trees',
-    color=sns.color_palette()[3],
-    markeredgewidth=0)
-plt.ylim(0, 0.05)
-plt.legend()
-plt.tight_layout()
-plt.savefig('figures/acc-eff.pdf')
-plt.savefig('figures/acc-eff.svg')
 
 ################################################################################
 # Generate node-link diagrams.
@@ -232,8 +193,6 @@ make_tree_acc_nld('acc-nld-cr-tree.pdf', 'one-true-cr-trees', 0)
 make_tree_cls_nld('cls-nld-cr-tree.pdf', 'one-true-cr-trees', 0)
 make_tree_cls_nld('cls-nld-cr-tree.svg', 'one-true-cr-trees', 0)
 
-exit()
-
 ################################################################################
 # Generate a per-layer mean error plot.
 ################################################################################
@@ -259,27 +218,3 @@ plt.plot(c_err_cor, label='Corrected Training Error',
 plt.legend()
 plt.tight_layout()
 plt.savefig('figures/mean-error.png', transparent=True)
-
-################################################################################
-# Generate error mapping cartoons.
-################################################################################
-
-def make_em_cartoon(i, α):
-    plt.figure(figsize=(2, 2))
-    plt.xkcd()
-    mpl.rcParams['path.effects'] = []
-    plt.plot(np.linspace(0, 2), α * np.exp(-np.linspace(0, 2)))
-    plt.gca().spines['right'].set_color('none')
-    plt.gca().spines['top'].set_color('none')
-    plt.gca().spines['bottom'].set_color('#404040')
-    plt.gca().spines['left'].set_color('#404040')
-    plt.xticks([]); plt.yticks([])
-    plt.ylim(0, 1); plt.tight_layout()
-    plt.savefig('figures/em-cartoon-%i.png' % i, transparent=True)
-    plt.close()
-
-make_em_cartoon(0, 1)
-make_em_cartoon(1, 0.4)
-make_em_cartoon(2, 0.5)
-make_em_cartoon(3, 0.1)
-make_em_cartoon(4, 0.4)
