@@ -32,15 +32,22 @@ print(80 * '\b \b' + 'Downloading MNIST — done!')
 # Reformat MNIST.
 ################################################################################
 
+def resize(x, h, w):
+    return np.array([
+        misc.imresize(x_i[:, :, 0], (h, w), mode='F')[:, :, None]
+        for x_i in x])
+
 print('Reformatting MNIST...', end='', flush=True)
 mnist_a = io.loadmat(join(mnist_path, 'mnist.mat'))
 mnist_b = {
     'm_sym': np.zeros(10),
     'x0_tr': np.vstack([
-        np.float32(np.reshape(mnist_a['train%i' % i], (-1, 28, 28, 1)) / 255)
+        resize(np.reshape(mnist_a['train%i' % i], (-1, 28, 28, 1)) / 255,
+               32, 32)
         for i in range(10)]),
     'x0_ts': np.vstack([
-        np.float32(np.reshape(mnist_a['test%i' % i], (-1, 28, 28, 1)) / 255)
+        resize(np.reshape(mnist_a['test%i' % i], (-1, 28, 28, 1)) / 255,
+               32, 32)
         for i in range(10)]),
     'y_tr': np.vstack([
         np.ones((len(mnist_a['train%i' % i]), 1), 'f') * np.identity(10, 'f')[i]
@@ -108,11 +115,6 @@ print(80 * '\b \b' + 'Reformatting CIFAR-10 — done!')
 # Combine MNIST and CIFAR-10.
 ################################################################################
 
-def resize(x, h, w):
-    return np.array([
-        misc.imresize(x_i[:, :, 0], (h, w), mode='F')[:, :, None]
-        for x_i in x])
-
 def recolor(x, d_min=0.3):
     x_tf = []
     for x_i in x:
@@ -132,10 +134,10 @@ cifar10 = np.load('data/cifar-10.npz')['arr_0'][()]
 hybrid = {
     'm_sym': [0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
     'x0_tr': np.vstack([
-        recolor(resize(mnist['x0_tr'], 32, 32)),
+        recolor(mnist['x0_tr']),
         cifar10['x0_tr']]),
     'x0_ts': np.vstack([
-        recolor(resize(mnist['x0_ts'], 32, 32)),
+        recolor(mnist['x0_ts']),
         cifar10['x0_ts']]),
     'y_tr': np.vstack([
         np.hstack([mnist['y_tr'], np.zeros_like(mnist['y_tr'])]),
