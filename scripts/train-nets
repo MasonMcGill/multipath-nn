@@ -32,6 +32,7 @@ k_l2 = 1e-4
 σ_w = 1
 
 x0_shape = (32, 32, 3)
+# x0_shape = (32, 32, 1)
 y_shape = (10,)
 
 arch = [
@@ -142,31 +143,50 @@ sr_hypers = lambda net, t: {}
 cr_hypers = lambda net, t: {net.τ: 0.1 / 2**(t / 20000)}
 ds_hypers = lambda net, t: {net.τ: 1.0 / 2**(t / 20000)}
 ds_hypers_nokdec = lambda net, t: {net.τ: 1.0 / 2**(t / 20000), net.k_dec: 0}
+ds_hypers_dynkcpt = lambda net, t: {
+    net.τ: 1.0 / 2**(t / 20000),
+    net.k_cpt: rand.choice(k_cpts, batch_size)}
 
 experiments = {
-    'sr-chains': Ns(
+    'sr-chains-mnist-nolln': Ns(
         nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
         hypers=sr_hypers),
-    'ds-chains-nolln-hightau': Ns(
+    'ds-chains-mnist-nolln-hightau': Ns(
         nets=[dr_chain(DSNet, k_cpt=k) for k in k_cpts],
         hypers=ds_hypers),
-    'ds-chains-notalr': Ns(
+    'ds-chains-notalr-nolln-hightau': Ns(
         nets=[dr_chain(DSNet, k_cpt=k, talr=False) for k in k_cpts],
         hypers=ds_hypers),
-    'ds-trees-long': Ns(
+    'ds-chains-dynkcpt-nolln-hightau': Ns(
+        nets=[dr_tree(DSNet, dyn_k_cpt=True)],
+        hypers=ds_hypers_dynkcpt),
+    'ds-trees-nolln-hightau': Ns(
         nets=[dr_tree(DSNet, k_cpt=k) for k in k_cpts],
         hypers=ds_hypers),
     'cr-chains-nolln-hightau': Ns(
         nets=[dr_chain(CRNet, k_cpt=k) for k in k_cpts],
         hypers=cr_hypers),
-    'cr-chains-opt-nolln': Ns(
-        nets=[dr_chain(CRNet, k_cpt=k, optimistic=True) for k in k_cpts],
+    'cr-chains-clserr-nolln-hightau': Ns(
+        nets=[dr_chain(CRNet, k_cpt=k, use_cls_err=True) for k in k_cpts],
         hypers=cr_hypers),
-    'cr-chains-nest-notalr': Ns(
+    'cr-chains-notalr-nolln-hightau': Ns(
         nets=[dr_chain(CRNet, k_cpt=k, talr=False) for k in k_cpts],
         hypers=cr_hypers),
-    'cr-trees': Ns(
+    'cr-trees-nolln-hightau': Ns(
         nets=[dr_tree(CRNet, k_cpt=k) for k in k_cpts],
+        hypers=cr_hypers),
+    'cr-chains-opt-nolln-hightau': Ns(
+        nets=[dr_chain(CRNet, k_cpt=k, optimistic=True) for k in k_cpts],
+        hypers=cr_hypers),
+    'cr-chains-opt-clserr-nolln-hightau': Ns(
+        nets=[dr_chain(CRNet, k_cpt=k, optimistic=True, use_cls_err=True) for k in k_cpts],
+        hypers=cr_hypers),
+    'cr-chains-opt-notalr-nolln-hightau': Ns(
+        nets=[dr_chain(CRNet, k_cpt=k, optimistic=True, talr=False)
+              for k in k_cpts],
+        hypers=cr_hypers),
+    'cr-trees-opt-nolln-hightau': Ns(
+        nets=[dr_tree(CRNet, k_cpt=k, optimistic=True) for k in k_cpts],
         hypers=cr_hypers)}
 
 ################################################################################
@@ -185,6 +205,8 @@ expt = experiments[expt_name]
 ################################################################################
 
 dataset = Dataset('data/hybrid.npz')
+# dataset = Dataset('data/mnist.npz')
+# dataset = Dataset('data/cifar-10.npz')
 
 ################################################################################
 # Train networks.
