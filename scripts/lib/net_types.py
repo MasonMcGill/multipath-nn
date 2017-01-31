@@ -165,7 +165,7 @@ class DSNet(Net):
 class CRNet(Net):
     default_hypers = Ns(
         k_cpt=0.0, k_cre=1e-3, ϵ=1e-6, τ=0.01, optimistic=False,
-        λ_lrn=1e-3, μ_lrn=0.9, talr=True, α_rtr=1.0)
+        use_cls_err=False, λ_lrn=1e-3, μ_lrn=0.9, talr=True, α_rtr=1.0)
 
     def _route(self, ℓ, p_tr, p_ev):
         ℓ.p_tr = p_tr
@@ -178,17 +178,25 @@ class CRNet(Net):
     def _route_sinks_stat(self, ℓ):
         for s in ℓ.sinks:
             self._route(s, ℓ.p_tr, ℓ.p_ev)
+        ϕ = self.hypers
+        c_err = (
+            (1 - getattr(ℓ, 'δ_cor', 1))
+            if ϕ.use_cls_err else ℓ.c_err)
         ℓ.c_ev = (
-            ℓ.c_err + self.hypers.k_cpt * ℓ.n_ops
+            c_err + ϕ.k_cpt * ℓ.n_ops
             + sum(s.c_ev for s in ℓ.sinks))
         ℓ.c_opt = (
-            ℓ.c_err + self.hypers.k_cpt * ℓ.n_ops
+            c_err + ϕ.k_cpt * ℓ.n_ops
             + sum(s.c_opt for s in ℓ.sinks))
         ℓ.c_cre = 0
 
     def _route_sinks_dyn(self, ℓ):
         def p_tr_ϵ(ℓ):
             return self.ϵ * n_leaves(ℓ) / n_leaves(self.root)
+        ϕ = self.hypers
+        c_err = (
+            (1 - getattr(ℓ, 'δ_cor', 1))
+            if ϕ.use_cls_err else ℓ.c_err)
         π_tr = (
             (1 - p_tr_ϵ(ℓ) / ℓ.p_tr[:, None])
             * tf.nn.softmax(ℓ.router.x / self.τ)
@@ -199,16 +207,16 @@ class CRNet(Net):
         for i, s in enumerate(ℓ.sinks):
             self._route(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i])
         ℓ.c_ev = (
-            ℓ.c_err + self.hypers.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+            c_err + ϕ.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
             + sum(π_ev[:, i] * s.c_ev
                   for i, s in enumerate(ℓ.sinks)))
         ℓ.c_opt = (
-            ℓ.c_err + self.hypers.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+            c_err + ϕ.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
             + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
         ℓ.c_cre = (
-            self.hypers.k_cre * sum(
+            ϕ.k_cre * sum(
                 tf.square(ℓ.router.x[:, i] + tf.stop_gradient(
-                    s.c_opt if self.hypers.optimistic else s.c_ev))
+                    s.c_opt if ϕ.optimistic else s.c_ev))
                 for i, s in enumerate(ℓ.sinks)))
 
     def link(self):
