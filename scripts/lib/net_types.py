@@ -103,7 +103,7 @@ class SRNet(Net):
 class DSNet(Net):
     default_hypers = Ns(
         k_cpt=0.0, k_dec=0.01, ϵ=1e-6, τ=1.0, λ_lrn=1e-3, μ_lrn=0.9,
-        dyn_k_cpt=True, talr=True, α_rtr=1.0)
+        dyn_k_cpt=False, talr=True, α_rtr=1.0)
 
     def _route(self, ℓ, p_tr, p_ev):
         ℓ.p_tr = p_tr
@@ -140,7 +140,6 @@ class DSNet(Net):
         self.μ_lrn = tf.placeholder_with_default(ϕ.μ_lrn, ())
         self.ϵ = tf.placeholder_with_default(ϕ.ϵ, ())
         self.τ = tf.placeholder_with_default(ϕ.τ, ())
-        self.k_cpt = tf.placeholder_with_default(ϕ.k_cpt, None)
         self.k_cpt = (
             tf.placeholder(tf.float32, (None,))
             if ϕ.dyn_k_cpt else ϕ.k_cpt)
