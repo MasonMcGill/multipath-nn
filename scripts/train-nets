@@ -11,182 +11,63 @@ import numpy.random as rand
 import tensorflow as tf
 
 from lib.data import Dataset
-from lib.desc import net_desc, render_net_desc
-from lib.layer_types import (
-    BatchNorm, Chain, CrossEntropyError, LinTrans, MultiscaleBatchNorm,
-    MultiscaleConvMax, MultiscaleLLN, MultiscaleRect, Rect, Select,
-    Softmax, ToPyramid)
-
-from lib.net_types import CRNet, DSNet, SRNet
 from lib.serdes import write_net
-
-################################################################################
-# Define network hyperparameters.
-################################################################################
-
-conv_supp = 3
-router_n_chan = 16
-
-k_cpts = [0.0, 1e-9, 2e-9, 4e-9, 8e-9, 1.6e-8, 3.2e-8, 6.4e-8]
-k_l2 = 1e-4
-σ_w = 1
-
-x0_shape = (32, 32, 3)
-# x0_shape = (32, 32, 1)
-y_shape = (10,)
-
-arch = [
-    [16, 16, 16, 16],
-    [16, 16, 16, 16],
-    [32, 32, 32],
-    [32, 32, 32],
-    [64, 64],
-    [64, 64],
-    [128],
-    [128]]
-
-################################################################################
-# Define training hyperparameters.
-################################################################################
-
-n_iter = 80000
-t_log = 2500
-batch_size = 128
-
-λ_lrn_0 = 0.1
-t_anneal = 10000
-
-################################################################################
-# Define network components.
-################################################################################
-
-def router(n_sinks):
-    return None if n_sinks < 2 else Chain(name='Router', comps=[
-        Select(i=-1), LinTrans(n_chan=router_n_chan, k_l2=k_l2, σ_w=σ_w),
-        BatchNorm(), Rect(), LinTrans(n_chan=n_sinks, k_l2=k_l2, σ_w=0)])
-
-def pyr(*sinks):
-    return Chain(
-        name='ToPyramid', sinks=sinks,
-        router=router(len(sinks)), comps=[
-            ToPyramid(n_scales=len(arch[0]))])
-
-def rcm(i, *sinks):
-    return Chain(
-        name='ReConvMax', sinks=sinks,
-        router=router(len(sinks)), comps=[
-            MultiscaleConvMax(
-                n_chan=arch[i], supp=conv_supp,
-                k_l2=k_l2, σ_w=σ_w),
-            MultiscaleBatchNorm(), MultiscaleRect()])
-
-def reg():
-    return Chain(name='LogReg', comps=[
-        Select(i=-1),
-        LinTrans(n_chan=y_shape[0], k_l2=k_l2, σ_w=σ_w),
-        Softmax(), CrossEntropyError()])
-
-################################################################################
-# Define network constructors.
-################################################################################
-
-def sr_chain(n_tf):
-    def make_net():
-        root = reg()
-        for i in reversed(range(n_tf)):
-            root = rcm(i, root)
-        root = pyr(root)
-        return SRNet(
-            x0_shape=x0_shape,
-            y_shape=y_shape,
-            root=root)
-    return make_net
-
-def dr_chain(type_, **hypers):
-    def make_net():
-        root = rcm(-1, reg())
-        for i in reversed(range(len(arch) - 1)):
-            root = rcm(i, reg(), root)
-        root = pyr(root)
-        return type_(
-            x0_shape=x0_shape, y_shape=y_shape,
-            root=root, **hypers)
-    return make_net
-
-def dr_tree(type_, **hypers):
-    def make_net():
-        root = pyr(
-            rcm(0, reg(),
-            rcm(1, reg(),
-                rcm(2, reg(),
-                rcm(3, reg(),
-                    rcm(4, reg(),
-                    rcm(5, reg())),
-                    rcm(4, reg(),
-                    rcm(5, reg())))),
-                rcm(2, reg(),
-                rcm(3, reg(),
-                    rcm(4, reg(),
-                    rcm(5, reg())),
-                    rcm(4, reg(),
-                    rcm(5, reg())))))))
-        return type_(
-            x0_shape=x0_shape, y_shape=y_shape,
-            root=root, **hypers)
-    return make_net
+from arch_and_hypers import (
+    arch, batch_size, cr_chain, cr_tree, ds_chain, ds_tree, k_cpts, n_iter,
+    sr_chain, t_log, λ_lrn, τ_cr, τ_ds)
 
 ################################################################################
 # Define experiments.
 ################################################################################
 
 sr_hypers = lambda net, t: {}
-cr_hypers = lambda net, t: {net.τ: 0.1 / 2**(t / 20000)}
-ds_hypers = lambda net, t: {net.τ: 1.0 / 2**(t / 20000)}
-ds_hypers_nokdec = lambda net, t: {net.τ: 1.0 / 2**(t / 20000), net.k_dec: 0}
+cr_hypers = lambda net, t: {net.τ: τ_cr(t)}
+ds_hypers = lambda net, t: {net.τ: τ_ds(t)}
+ds_hypers_nokdec = lambda net, t: {net.τ: τ_ds(t), net.k_dec: 0}
 ds_hypers_dynkcpt = lambda net, t: {
-    net.τ: 1.0 / 2**(t / 20000),
-    net.k_cpt: rand.choice(k_cpts, batch_size)}
+    net.τ: τ_ds(t), net.k_cpt: rand.choice(k_cpts, batch_size)}
 
 experiments = {
     'sr-chains-mnist-nolln': Ns(
         nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
         hypers=sr_hypers),
     'ds-chains-mnist-nolln-hightau': Ns(
-        nets=[dr_chain(DSNet, k_cpt=k) for k in k_cpts],
+        nets=[ds_chain(k_cpt=k) for k in k_cpts],
         hypers=ds_hypers),
     'ds-chains-notalr-nolln-hightau': Ns(
-        nets=[dr_chain(DSNet, k_cpt=k, talr=False) for k in k_cpts],
+        nets=[ds_chain(k_cpt=k, talr=False) for k in k_cpts],
         hypers=ds_hypers),
     'ds-chains-dynkcpt-nolln-hightau': Ns(
-        nets=[dr_tree(DSNet, dyn_k_cpt=True)],
+        nets=[ds_tree(dyn_k_cpt=True)],
         hypers=ds_hypers_dynkcpt),
     'ds-trees-nolln-hightau': Ns(
-        nets=[dr_tree(DSNet, k_cpt=k) for k in k_cpts],
+        nets=[ds_tree(k_cpt=k) for k in k_cpts],
         hypers=ds_hypers),
     'cr-chains-nolln-hightau': Ns(
-        nets=[dr_chain(CRNet, k_cpt=k) for k in k_cpts],
+        nets=[cr_chain(k_cpt=k) for k in k_cpts],
         hypers=cr_hypers),
     'cr-chains-clserr-nolln-hightau': Ns(
-        nets=[dr_chain(CRNet, k_cpt=k, use_cls_err=True) for k in k_cpts],
+        nets=[cr_chain(k_cpt=k, use_cls_err=True) for k in k_cpts],
         hypers=cr_hypers),
     'cr-chains-notalr-nolln-hightau': Ns(
-        nets=[dr_chain(CRNet, k_cpt=k, talr=False) for k in k_cpts],
+        nets=[cr_chain(k_cpt=k, talr=False) for k in k_cpts],
         hypers=cr_hypers),
     'cr-trees-nolln-hightau': Ns(
-        nets=[dr_tree(CRNet, k_cpt=k) for k in k_cpts],
+        nets=[cr_tree(k_cpt=k) for k in k_cpts],
         hypers=cr_hypers),
     'cr-chains-opt-nolln-hightau': Ns(
-        nets=[dr_chain(CRNet, k_cpt=k, optimistic=True) for k in k_cpts],
+        nets=[cr_chain(k_cpt=k, optimistic=True) for k in k_cpts],
         hypers=cr_hypers),
     'cr-chains-opt-clserr-nolln-hightau': Ns(
-        nets=[dr_chain(CRNet, k_cpt=k, optimistic=True, use_cls_err=True) for k in k_cpts],
+        nets=[cr_chain(k_cpt=k, optimistic=True, use_cls_err=True)
+              for k in k_cpts],
         hypers=cr_hypers),
     'cr-chains-opt-notalr-nolln-hightau': Ns(
-        nets=[dr_chain(CRNet, k_cpt=k, optimistic=True, talr=False)
+        nets=[cr_chain(k_cpt=k, optimistic=True, talr=False)
               for k in k_cpts],
         hypers=cr_hypers),
     'cr-trees-opt-nolln-hightau': Ns(
-        nets=[dr_tree(CRNet, k_cpt=k, optimistic=True) for k in k_cpts],
+        nets=[cr_tree(k_cpt=k, optimistic=True) for k in k_cpts],
         hypers=cr_hypers)}
 
 ################################################################################
@@ -244,7 +125,7 @@ def train_net(i):
         print('  --- Iteration %i ---\r' % (t + 1), end='', flush=True)
         net.train.run({
             net.x0: x0, net.y: y, net.mode: 'tr',
-            net.λ_lrn: λ_lrn_0 / 2**(t / t_anneal), **ϕ})
+            net.λ_lrn: λ_lrn(t), **ϕ})
         if (t + 1) % t_log == 0:
             desc = net_desc(net, dataset, ϕ, net_state)
             text = render_net_desc(desc, (
