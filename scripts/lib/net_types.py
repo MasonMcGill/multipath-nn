@@ -150,7 +150,8 @@ class DSNet(Net):
                     tf.reshape(x_, (
                         tf.shape(x_)[0],
                         np.prod(x_.get_shape().as_list()[1:]))),
-                    self.k_cpt[:, None]])
+                    self.k_cpt[:, None]
+                    * tf.ones((tf.shape(x_)[0], 1))])
                 if not ϕ.dyn_k_cpt:
                     x_rte = ℓ.x
                 elif isinstance(ℓ.x, list):

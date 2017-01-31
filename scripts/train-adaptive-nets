@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''
-Train statically- or dynamically-routed networks.
+Train dynamically-routed networks that can adapt to computation-cost variations.
 '''
 from argparse import ArgumentParser
 from os import makedirs
@@ -21,50 +21,13 @@ from arch_and_hypers import (
 # Define experiments.
 ################################################################################
 
-sr_hypers = lambda net, t: {}
-cr_hypers = lambda net, t: {net.τ: τ_cr(t)}
-ds_hypers = lambda net, t: {net.τ: τ_ds(t)}
-ds_hypers_nokdec = lambda net, t: {net.τ: τ_ds(t), net.k_dec: 0}
+ds_hypers_dynkcpt = lambda net, t: {
+    net.τ: τ_ds(t), net.k_cpt: rand.choice(k_cpts, batch_size)}
 
 experiments = {
-    'sr-chains-mnist-nolln': Ns(
-        nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
-        hypers=sr_hypers),
-    'ds-chains-mnist-nolln-hightau': Ns(
-        nets=[ds_chain(k_cpt=k) for k in k_cpts],
-        hypers=ds_hypers),
-    'ds-chains-notalr-nolln-hightau': Ns(
-        nets=[ds_chain(k_cpt=k, talr=False) for k in k_cpts],
-        hypers=ds_hypers),
-    'ds-trees-nolln-hightau': Ns(
-        nets=[ds_tree(k_cpt=k) for k in k_cpts],
-        hypers=ds_hypers),
-    'cr-chains-nolln-hightau': Ns(
-        nets=[cr_chain(k_cpt=k) for k in k_cpts],
-        hypers=cr_hypers),
-    'cr-chains-clserr-nolln-hightau': Ns(
-        nets=[cr_chain(k_cpt=k, use_cls_err=True) for k in k_cpts],
-        hypers=cr_hypers),
-    'cr-chains-notalr-nolln-hightau': Ns(
-        nets=[cr_chain(k_cpt=k, talr=False) for k in k_cpts],
-        hypers=cr_hypers),
-    'cr-trees-nolln-hightau': Ns(
-        nets=[cr_tree(k_cpt=k) for k in k_cpts],
-        hypers=cr_hypers),
-    'cr-chains-opt-nolln-hightau': Ns(
-        nets=[cr_chain(k_cpt=k, optimistic=True) for k in k_cpts],
-        hypers=cr_hypers),
-    'cr-chains-opt-clserr-nolln-hightau': Ns(
-        nets=[cr_chain(k_cpt=k, optimistic=True, use_cls_err=True)
-              for k in k_cpts],
-        hypers=cr_hypers),
-    'cr-chains-opt-notalr-nolln-hightau': Ns(
-        nets=[cr_chain(k_cpt=k, optimistic=True, talr=False)
-              for k in k_cpts],
-        hypers=cr_hypers),
-    'cr-trees-opt-nolln-hightau': Ns(
-        nets=[cr_tree(k_cpt=k, optimistic=True) for k in k_cpts],
-        hypers=cr_hypers)}
+    'ds-chains-dynkcpt-nolln-hightau': Ns(
+        net=ds_tree(dyn_k_cpt=True),
+        hypers=ds_hypers_dynkcpt)}
 
 ################################################################################
 # Parse command-line arguments.
@@ -110,9 +73,9 @@ def state_tensors(net):
             **{(ℓ, 'c_err_cor'): ℓ.c_err_cor for ℓ in net.leaves
                if hasattr(ℓ, 'c_err_cor')}}
 
-def train_net(i):
+def train_net():
     expt = experiments[expt_name]
-    net = expt.nets[i]()
+    net = expt.net()
     net_state = state_tensors(net)
     tf.initialize_all_variables().run()
     for t in range(n_iter):
@@ -122,24 +85,16 @@ def train_net(i):
         net.train.run({
             net.x0: x0, net.y: y, net.mode: 'tr',
             net.λ_lrn: λ_lrn(t), **ϕ})
-        if (t + 1) % t_log == 0:
-            desc = net_desc(net, dataset, ϕ, net_state)
-            text = render_net_desc(desc, (
-                'nets/%s/%.4i.npy — Epoch %i'
-                % (expt_name, i, t + 1)))
-            makedirs('nets/%s' % expt_name, exist_ok=True)
-            makedirs('nets/%s/%.4i-stats' % (expt_name, i), exist_ok=True)
-            np.save('nets/%s/%.4i-stats/%.8i.npy' % (expt_name, i, t + 1), desc)
-            np.save('nets/%s/%.4i-stats.npy' % (expt_name, i), desc)
-            with open('nets/%s/%.4i-log.txt' % (expt_name, i), 'a+') as f:
-                f.write(text + '\n')
-            print(text)
     makedirs('nets/%s' % expt_name, exist_ok=True)
-    write_net('nets/%s/%.4i.npy' % (expt_name, i), net)
+    for i, k_cpt in enumerate(k_cpts):
+        ϕ_i = {**ϕ, net.k_cpt: [k_cpt]}
+        desc = net_desc(net, dataset, ϕ_i, net_state)
+        np.save('nets/%s/%.4i-stats.npy' % (expt_name, i), desc)
+    write_net('nets/%s/net.npy' % expt_name, net)
+    print()
 
-for i in range(len(expt.nets)):
-    with tf.Graph().as_default():
-        sess = tf.Session(config=tf.ConfigProto(
-            gpu_options=tf.GPUOptions(allow_growth=True)))
-        with sess.as_default():
-            train_net(i)
+with tf.Graph().as_default():
+    sess = tf.Session(config=tf.ConfigProto(
+        gpu_options=tf.GPUOptions(allow_growth=True)))
+    with sess.as_default():
+        train_net()
