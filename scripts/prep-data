@@ -107,8 +107,20 @@ cifar10_b = {
         np.float32(batch['labels'] == np.arange(10))
         for batch in cifar10_a_ts])}
 
+w_horse = np.array([
+    [0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 0, 1, 1]])
+
+cifar10_horses = {
+    'm_sym': np.ones(2),
+    'x0_tr': cifar10_b['x0_tr'],
+    'x0_ts': cifar10_b['x0_ts'],
+    'y_tr': np.dot(cifar10_b['y_tr'], w_horse.T),
+    'y_ts': np.dot(cifar10_b['y_ts'], w_horse.T)}
+
 makedirs('data/', exist_ok=True)
 np.savez_compressed('data/cifar-10.npz', cifar10_b)
+np.savez_compressed('data/cifar-10-horses.npz', cifar10_horses)
 print(80 * '\b \b' + 'Reformatting CIFAR-10 — done!')
 
 ################################################################################
