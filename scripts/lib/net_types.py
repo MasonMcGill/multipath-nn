@@ -187,7 +187,8 @@ class DSNet(Net):
 class CRNet(Net):
     default_hypers = Ns(
         k_cpt=0.0, k_cre=1e-3, ϵ=1e-6, τ=0.01, optimistic=False,
-        use_cls_err=False, λ_lrn=1e-3, μ_lrn=0.9, talr=True, α_rtr=1.0)
+        dyn_k_cpt=False, α_cpt=1e7, use_cls_err=False, λ_lrn=1e-3, μ_lrn=0.9,
+        talr=True, α_rtr=1.0)
 
     def _route(self, ℓ, p_tr, p_ev):
         ℓ.p_tr = p_tr
@@ -205,10 +206,10 @@ class CRNet(Net):
             (1 - getattr(ℓ, 'δ_cor', 1))
             if ϕ.use_cls_err else ℓ.c_err)
         ℓ.c_ev = (
-            c_err + ϕ.k_cpt * ℓ.n_ops
+            c_err + self.k_cpt * ℓ.n_ops
             + sum(s.c_ev for s in ℓ.sinks))
         ℓ.c_opt = (
-            c_err + ϕ.k_cpt * ℓ.n_ops
+            c_err + self.k_cpt * ℓ.n_ops
             + sum(s.c_opt for s in ℓ.sinks))
         ℓ.c_cre = 0
 
@@ -229,11 +230,11 @@ class CRNet(Net):
         for i, s in enumerate(ℓ.sinks):
             self._route(s, ℓ.p_tr * π_tr[:, i], ℓ.p_ev * π_ev[:, i])
         ℓ.c_ev = (
-            c_err + ϕ.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+            c_err + self.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
             + sum(π_ev[:, i] * s.c_ev
                   for i, s in enumerate(ℓ.sinks)))
         ℓ.c_opt = (
-            c_err + ϕ.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
+            c_err + self.k_cpt * (ℓ.n_ops + ℓ.router.n_ops)
             + reduce(tf.minimum, (s.c_opt for s in ℓ.sinks)))
         ℓ.c_cre = (
             ϕ.k_cre * sum(
@@ -242,12 +243,33 @@ class CRNet(Net):
                 for i, s in enumerate(ℓ.sinks)))
 
     def link(self):
-        super().link()
         ϕ = self.hypers
         self.λ_lrn = tf.placeholder_with_default(ϕ.λ_lrn, ())
         self.μ_lrn = tf.placeholder_with_default(ϕ.μ_lrn, ())
         self.ϵ = tf.placeholder_with_default(ϕ.ϵ, ())
         self.τ = tf.placeholder_with_default(ϕ.τ, ())
+        self.k_cpt = (
+            tf.placeholder(tf.float32, (None,))
+            if ϕ.dyn_k_cpt else ϕ.k_cpt)
+        def link_layer(ℓ, x, y, mode):
+            ℓ.link(x, y, mode)
+            if ℓ.router is not None:
+                concat_k_cpt = lambda x_: tf.concat(1, [
+                    tf.reshape(x_, (
+                        tf.shape(x_)[0],
+                        np.prod(x_.get_shape().as_list()[1:]))),
+                    ϕ.α_cpt * self.k_cpt[:, None]
+                    * tf.ones((tf.shape(x_)[0], 1))])
+                if not ϕ.dyn_k_cpt:
+                    x_rte = ℓ.x
+                elif isinstance(ℓ.x, list):
+                    x_rte = list(map(concat_k_cpt, ℓ.x))
+                else:
+                    x_rte = concat_k_cpt(ℓ.x)
+                ℓ.router.link(x_rte, y, mode)
+            for s in ℓ.sinks:
+                link_layer(s, ℓ.x, y, mode)
+        link_layer(self.root, self.x0, self.y, self.mode)
         n_pts = tf.shape(self.x0)[0]
         self._route(self.root, tf.ones((n_pts,)), tf.ones((n_pts,)))
         c_err = sum(tf.stop_gradient(ℓ.p_tr) * ℓ.c_err for ℓ in self.layers)
