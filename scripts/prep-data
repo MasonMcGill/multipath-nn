@@ -107,20 +107,33 @@ cifar10_b = {
         np.float32(batch['labels'] == np.arange(10))
         for batch in cifar10_a_ts])}
 
-w_horse = np.array([
+cifar2_classes = np.array([
     [0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
     [1, 1, 1, 1, 1, 1, 1, 0, 1, 1]])
+cifar5_classes = np.array([
+    [0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+    [1, 1, 1, 0, 0, 0, 1, 0, 1, 1]])
 
-cifar10_horses = {
+cifar2 = {
     'm_sym': np.ones(2),
     'x0_tr': cifar10_b['x0_tr'],
     'x0_ts': cifar10_b['x0_ts'],
-    'y_tr': np.dot(cifar10_b['y_tr'], w_horse.T),
-    'y_ts': np.dot(cifar10_b['y_ts'], w_horse.T)}
+    'y_tr': np.dot(cifar10_b['y_tr'], cifar2_classes.T),
+    'y_ts': np.dot(cifar10_b['y_ts'], cifar2_classes.T)}
+cifar5 = {
+    'm_sym': np.ones(5),
+    'x0_tr': cifar10_b['x0_tr'],
+    'x0_ts': cifar10_b['x0_ts'],
+    'y_tr': np.dot(cifar10_b['y_tr'], cifar5_classes.T),
+    'y_ts': np.dot(cifar10_b['y_ts'], cifar5_classes.T)}
 
 makedirs('data/', exist_ok=True)
+np.savez_compressed('data/cifar-2.npz', cifar2)
+np.savez_compressed('data/cifar-5.npz', cifar5)
 np.savez_compressed('data/cifar-10.npz', cifar10_b)
-np.savez_compressed('data/cifar-10-horses.npz', cifar10_horses)
 print(80 * '\b \b' + 'Reformatting CIFAR-10 — done!')
 
 ################################################################################
