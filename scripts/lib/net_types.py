@@ -100,7 +100,7 @@ class SRNet(Net):
 # Decision Smoothing Networks
 ################################################################################
 
-class DSNet(Net):
+class ActorNet(Net):
     default_hypers = Ns(
         k_cpt=0.0, k_dec=0.01, ϵ=1e-6, τ=1.0, λ_lrn=1e-3, μ_lrn=0.9,
         dyn_k_cpt=False, α_cpt=1e7, talr=True, α_rtr=1.0)
@@ -184,7 +184,7 @@ class DSNet(Net):
 # Cost Regression Networks
 ################################################################################
 
-class CRNet(Net):
+class CriticNet(Net):
     default_hypers = Ns(
         k_cpt=0.0, k_cre=1e-3, ϵ=1e-6, τ=0.01, optimistic=False,
         dyn_k_cpt=False, α_cpt=1e7, use_cls_err=False, λ_lrn=1e-3, μ_lrn=0.9,

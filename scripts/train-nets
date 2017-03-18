@@ -11,10 +11,10 @@ import numpy.random as rand
 import tensorflow as tf
 
 from lib.data import Dataset
-from lib.desc import net_desc
+from lib.desc import net_desc, render_net_desc
 from lib.serdes import write_net
 from arch_and_hypers import (
-    arch, batch_size, cr_chain, cr_tree, ds_chain, ds_tree, k_cpts, n_iter,
+    arch, batch_size, cr_chain, cr_tree, ac_chain, ac_tree, k_cpts, n_iter,
     sr_chain, t_log, λ_lrn, τ_cr, τ_ds)
 
 ################################################################################
@@ -23,48 +23,69 @@ from arch_and_hypers import (
 
 sr_hypers = lambda net, t: {}
 cr_hypers = lambda net, t: {net.τ: τ_cr(t)}
-ds_hypers = lambda net, t: {net.τ: τ_ds(t)}
-ds_hypers_nokdec = lambda net, t: {net.τ: τ_ds(t), net.k_dec: 0}
+ac_hypers = lambda net, t: {net.τ: τ_ds(t)}
 
 experiments = {
-    'sr-chains-mnist-nolln': Ns(
+    'hybrid-sr': Ns(
+        dataset='data/hybrid.npz',
         nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
         hypers=sr_hypers),
-    'ds-chains-mnist-nolln-hightau': Ns(
-        nets=[ds_chain(k_cpt=k) for k in k_cpts],
-        hypers=ds_hypers),
-    'ds-chains-notalr-nolln-hightau': Ns(
-        nets=[ds_chain(k_cpt=k, talr=False) for k in k_cpts],
-        hypers=ds_hypers),
-    'ds-trees-nolln-hightau': Ns(
-        nets=[ds_tree(k_cpt=k) for k in k_cpts],
-        hypers=ds_hypers),
-    'cr-chains-nolln-hightau': Ns(
+    'hybrid-ac': Ns(
+        dataset='data/hybrid.npz',
+        nets=[ac_chain(k_cpt=k) for k in k_cpts],
+        hypers=ac_hypers),
+    'hybrid-ac-nokdec': Ns(
+        dataset='data/hybrid.npz',
+        nets=[ac_chain(k_cpt=k, k_dec=0) for k in k_cpts],
+        hypers=ac_hypers),
+    'hybrid-ac-notalr': Ns(
+        dataset='data/hybrid.npz',
+        nets=[ac_chain(k_cpt=k, talr=False) for k in k_cpts],
+        hypers=ac_hypers),
+    'hybrid-ac-tree': Ns(
+        dataset='data/hybrid.npz',
+        nets=[ac_tree(k_cpt=k) for k in k_cpts],
+        hypers=ac_hypers),
+    'hybrid-cr': Ns(
+        dataset='data/hybrid.npz',
         nets=[cr_chain(k_cpt=k) for k in k_cpts],
         hypers=cr_hypers),
-    'cr-chains-clserr-nolln-hightau': Ns(
-        nets=[cr_chain(k_cpt=k, use_cls_err=True) for k in k_cpts],
-        hypers=cr_hypers),
-    'cr-chains-notalr-nolln-hightau': Ns(
-        nets=[cr_chain(k_cpt=k, talr=False) for k in k_cpts],
-        hypers=cr_hypers),
-    'cr-trees-nolln-hightau': Ns(
-        nets=[cr_tree(k_cpt=k) for k in k_cpts],
-        hypers=cr_hypers),
-    'cr-chains-opt-nolln-hightau': Ns(
+    'hybrid-cr-opt': Ns(
+        dataset='data/hybrid.npz',
         nets=[cr_chain(k_cpt=k, optimistic=True) for k in k_cpts],
         hypers=cr_hypers),
-    'cr-chains-opt-clserr-nolln-hightau': Ns(
-        nets=[cr_chain(k_cpt=k, optimistic=True, use_cls_err=True)
-              for k in k_cpts],
+    'hybrid-cr-clserr': Ns(
+        dataset='data/hybrid.npz',
+        nets=[cr_chain(k_cpt=k, use_cls_err=True) for k in k_cpts],
         hypers=cr_hypers),
-    'cr-chains-opt-notalr-nolln-hightau': Ns(
-        nets=[cr_chain(k_cpt=k, optimistic=True, talr=False)
-              for k in k_cpts],
+    'hybrid-cr-notalr': Ns(
+        dataset='data/hybrid.npz',
+        nets=[cr_chain(k_cpt=k, talr=False) for k in k_cpts],
         hypers=cr_hypers),
-    'cr-trees-opt-nolln-hightau': Ns(
-        nets=[cr_tree(k_cpt=k, optimistic=True) for k in k_cpts],
-        hypers=cr_hypers)}
+    'cifar2-sr': Ns(
+        dataset='data/cifar-2.npz',
+        nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
+        hypers=sr_hypers),
+    'cifar2-ac': Ns(
+        dataset='data/cifar-2.npz',
+        nets=[ac_chain(k_cpt=k) for k in k_cpts],
+        hypers=ac_hypers),
+    'cifar5-sr': Ns(
+        dataset='data/cifar-5.npz',
+        nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
+        hypers=sr_hypers),
+    'cifar5-ac': Ns(
+        dataset='data/cifar-5.npz',
+        nets=[ac_chain(k_cpt=k) for k in k_cpts],
+        hypers=ac_hypers),
+    'cifar10-sr': Ns(
+        dataset='data/cifar-10.npz',
+        nets=[sr_chain(n) for n in range(1, len(arch) + 1)],
+        hypers=sr_hypers),
+    'cifar10-ac': Ns(
+        dataset='data/cifar-10.npz',
+        nets=[ac_chain(k_cpt=k) for k in k_cpts],
+        hypers=ac_hypers)}
 
 ################################################################################
 # Parse command-line arguments.
@@ -81,9 +102,7 @@ expt = experiments[expt_name]
 # Load the dataset.
 ################################################################################
 
-dataset = Dataset('data/hybrid.npz')
-# dataset = Dataset('data/mnist.npz')
-# dataset = Dataset('data/cifar-10.npz')
+dataset = Dataset(expt.dataset)
 
 ################################################################################
 # Train networks.
@@ -112,7 +131,7 @@ def state_tensors(net):
 
 def train_net(i):
     expt = experiments[expt_name]
-    net = expt.nets[i]()
+    net = expt.nets[i](dataset.x0_shape, dataset.y_shape)
     net_state = state_tensors(net)
     tf.initialize_all_variables().run()
     for t in range(n_iter):

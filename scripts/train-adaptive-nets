@@ -14,20 +14,35 @@ from lib.data import Dataset
 from lib.desc import net_desc
 from lib.serdes import write_net
 from arch_and_hypers import (
-    arch, batch_size, cr_chain, cr_tree, ds_chain, ds_tree, k_cpts, n_iter,
+    arch, batch_size, cr_chain, cr_tree, ac_chain, ac_tree, k_cpts, n_iter,
     sr_chain, t_log, λ_lrn, τ_cr, τ_ds)
 
 ################################################################################
 # Define experiments.
 ################################################################################
 
-ds_hypers_dynkcpt = lambda net, t: {
+ac_hypers_dynkcpt = lambda net, t: {
     net.τ: τ_ds(t), net.k_cpt: rand.choice(k_cpts, batch_size)}
+cr_hypers_dynkcpt = lambda net, t: {
+    net.τ: τ_cr(t), net.k_cpt: rand.choice(k_cpts, batch_size)}
 
 experiments = {
-    'ds-chains-dynkcpt-nolln-hightau': Ns(
-        net=ds_tree(dyn_k_cpt=True),
-        hypers=ds_hypers_dynkcpt)}
+    'hybrid-ac-dynkcpt': Ns(
+        dataset='data/hybrid.npz',
+        net=ac_chain(dyn_k_cpt=True),
+        hypers=ac_hypers_dynkcpt),
+    'hybrid-ac-tree-dynkcpt': Ns(
+        dataset='data/hybrid.npz',
+        net=ac_tree(dyn_k_cpt=True),
+        hypers=ac_hypers_dynkcpt),
+    'hybrid-cr-dynkcpt': Ns(
+        dataset='data/hybrid.npz',
+        net=cr_chain(dyn_k_cpt=True),
+        hypers=cr_hypers_dynkcpt),
+    'hybrid-cr-tree-dynkcpt': Ns(
+        dataset='data/hybrid.npz',
+        net=cr_tree(dyn_k_cpt=True),
+        hypers=cr_hypers_dynkcpt)}
 
 ################################################################################
 # Parse command-line arguments.
@@ -44,9 +59,7 @@ expt = experiments[expt_name]
 # Load the dataset.
 ################################################################################
 
-dataset = Dataset('data/hybrid.npz')
-# dataset = Dataset('data/mnist.npz')
-# dataset = Dataset('data/cifar-10.npz')
+dataset = Dataset(expt.dataset)
 
 ################################################################################
 # Train networks.
@@ -75,7 +88,7 @@ def state_tensors(net):
 
 def train_net():
     expt = experiments[expt_name]
-    net = expt.net()
+    net = expt.net(dataset.x0_shape, dataset.y_shape)
     net_state = state_tensors(net)
     tf.initialize_all_variables().run()
     for t in range(n_iter):

@@ -3,10 +3,16 @@
 Generate accuracy/efficiency plots.
 '''
 from glob import glob
-from os import listdir, makedirs
+from os import listdir, makedirs, remove
 from os.path import splitext
 
+import matplotlib as mpl
+mpl.use('Agg')
+
+import matplotlib.gridspec as gridspec
+import matplotlib.lines as lns
 import matplotlib.pyplot as plt
+import matplotlib.ticker as tkr
 import numpy as np
 import seaborn as sns
 
@@ -14,16 +20,13 @@ import seaborn as sns
 # Load experiment results.
 ################################################################################
 
-logs = {}
-
-for log_name in listdir('nets'):
-    log_paths = glob('nets/%s/*-stats.npy' % log_name)
-    logs[splitext(log_name)[0]] = [np.load(p)[()] for p in sorted(log_paths)]
-
+logs = {n: [np.load(p)[()] for p in sorted(glob('nets/%s/*-stats.npy' % n))]
+        for n in listdir('nets')}
 errs = {name: [1 - net['stats_ts']['acc'] for net in log]
         for name, log in logs.items()}
 mocs = {name: [net['stats_ts']['moc'] for net in log]
         for name, log in logs.items()}
+stats = {k: (mocs[k], errs[k]) for k in mocs.keys()}
 
 ################################################################################
 # Ensure that the output directory exists.
@@ -32,43 +35,202 @@ mocs = {name: [net['stats_ts']['moc'] for net in log]
 makedirs('figures', exist_ok=True)
 
 ################################################################################
-# Generate accuracy/efficiency plots.
+# Set global figure style properties.
 ################################################################################
 
-def make_acc_eff_plot(dst, ylim, targets):
-    plt.figure(figsize=(6, 4))
-    plt.xlabel('Mean Op Count')
-    plt.ylabel('Error Rate')
-    for src, label in targets:
-        plt.plot(mocs[src], errs[src], label=label)
-    plt.ylim(ylim)
-    plt.legend(loc='upper right')
-    plt.tight_layout()
-    plt.savefig(dst)
-    plt.close()
+sns.set_style('ticks')
+sns.set_color_codes()
+plt.rcParams['text.usetex'] = True
+plt.rcParams['font.family'] = 'serif'
 
-make_acc_eff_plot('figures/acc-eff-0.svg', (0, 0.07), [
-    ('sr-chains', 'Statically-Routed Chains'),
-    ('ds-chains', 'Actor Chains'),
-    ('cr-chains', 'Pragmatic Critic Chains'),
-    ('cr-chains-opt', 'Optimistic Critic Chains')])
-make_acc_eff_plot('figures/acc-eff-1.svg', (0, 0.07), [
-    ('sr-chains', 'Statically-Routed Chains'),
-    ('ds-chains', 'Actor Chains'),
-    ('ds-chains-notalr', 'Actor Chains, no TALR')])
-make_acc_eff_plot('figures/acc-eff-2.svg', (0, 0.07), [
-    ('sr-chains', 'Statically-Routed Chains'),
-    ('cr-chains', 'Pragmatic Critic Chains'),
-    ('cr-chains-notalr', 'Pragmatic Critic Chains, no TALR')])
-make_acc_eff_plot('figures/acc-eff-3.svg', (0, 0.07), [
-    ('sr-chains', 'Statically-Routed Chains'),
-    ('ds-chains', 'Actor Chains'),
-    ('ds-chains-regd', 'Actor Chains, Regularized ̂d')])
-make_acc_eff_plot('figures/acc-eff-4.svg', (0, 0.07), [
-    ('sr-chains', 'Statically-Routed Chains'),
-    ('ds-chains', 'Actor Chains'),
-    ('ds-trees', 'Actor Trees')])
-make_acc_eff_plot('figures/acc-eff-5.svg', (0, 0.07), [
-    ('sr-chains', 'Statically-Routed Chains'),
-    ('cr-chains-nest', 'Pragmatic Critic Chains'),
-    ('cr-trees-nest', 'Pragmatic Critic Trees')])
+################################################################################
+# Compare training strategies.
+################################################################################
+
+plt.figure(figsize=(10, 3.5))
+
+left_grid = gridspec.GridSpec(
+    1, 1, top=0.99, bottom=0.36, left=0.08,
+    right=0.3, wspace=0, hspace=0)
+right_grid = gridspec.GridSpec(
+    2, 4, top=0.99, bottom=0.36, left=0.35,
+    right=0.99, wspace=0.1, hspace=0.18)
+
+plt.subplot(left_grid[0, 0])
+plt.plot(*stats['hybrid-sr'], c='b')
+plt.plot(*stats['hybrid-ac'], c='g')
+plt.plot(*stats['hybrid-cr'], c='r')
+plt.xlim(0, 2.25e7)
+plt.xticks([0, 1e7, 2e7], ['$0$', '$1{\\times}10^7$', '$2{\\times}10^7$'])
+plt.ylim(0.015, 0.065); plt.yticks([0.02, 0.04, 0.06])
+
+plt.subplot(right_grid[0, 0])
+plt.plot(*stats['hybrid-sr'], c='b')
+plt.plot(*stats['hybrid-cr'], c='r')
+plt.plot(*stats['hybrid-cr-opt'], c='#eea000')
+plt.xlim(0, 2.25e7); plt.xticks([0, 1e7, 2e7], [])
+plt.ylim(0.015, 0.065); plt.yticks([0.02, 0.04, 0.06], fontsize='xx-small')
+
+plt.subplot(right_grid[0, 1])
+plt.plot(*stats['hybrid-sr'], c='b')
+plt.plot(*stats['hybrid-cr'], c='r')
+plt.plot(*stats['hybrid-cr-clserr'], c='y')
+plt.xlim(0, 2.25e7); plt.xticks([0, 1e7, 2e7], [])
+plt.ylim(0.015, 0.065); plt.yticks([0.02, 0.04, 0.06], [])
+
+plt.subplot(right_grid[0, 2])
+plt.plot(*stats['hybrid-sr'], c='b')
+plt.plot(*stats['hybrid-cr'], c='r')
+plt.plot(*stats['hybrid-cr-notalr'], '--', c='r')
+plt.xlim(0, 2.25e7); plt.xticks([0, 1e7, 2e7], [])
+plt.ylim(0.015, 0.065); plt.yticks([0.02, 0.04, 0.06], [])
+
+plt.subplot(right_grid[0, 3])
+plt.plot(*stats['hybrid-sr'], c='b')
+plt.plot(*stats['hybrid-ac'], c='g')
+plt.plot(*stats['hybrid-ac-notalr'], '--', c='g')
+plt.xlim(0, 2.25e7); plt.xticks([0, 1e7, 2e7], [])
+plt.ylim(0.015, 0.065); plt.yticks([0.02, 0.04, 0.06], [])
+
+plt.subplot(right_grid[1, 0])
+plt.plot(*stats['hybrid-sr'], c='b')
+plt.plot(*stats['hybrid-ac'], c='g')
+plt.plot(*stats['hybrid-ac-nokdec'], ':', c='g')
+plt.xlim(0, 2.25e7)
+plt.xticks(
+    [0, 1e7, 2e7], ['$0$', '$1{\\times}10^7$', '$2{\\times}10^7$'],
+    fontsize='xx-small')
+plt.ylim(0.015, 0.065)
+plt.yticks([0.02, 0.04, 0.06], fontsize='xx-small')
+
+plt.subplot(right_grid[1, 1])
+plt.plot(*stats['hybrid-sr'], c='b')
+plt.plot(*stats['hybrid-ac'], c='g')
+plt.plot(*stats['hybrid-ac-globopt'], c='m')
+plt.xlim(0, 2.25e7)
+plt.xticks(
+    [0, 1e7, 2e7], ['$0$', '$1{\\times}10^7$', '$2{\\times}10^7$'],
+    fontsize='xx-small')
+plt.ylim(0.015, 0.065)
+plt.yticks([0.02, 0.04, 0.06], [])
+
+plt.subplot(right_grid[1, 2])
+plt.plot(*stats['hybrid-sr'], c='b')
+plt.plot(*stats['hybrid-ac'], c='g')
+plt.plot(*stats['hybrid-ac-tree'], c='c')
+plt.xlim(0, 2.25e7)
+plt.xticks(
+    [0, 1e7, 2e7], ['$0$', '$1{\\times}10^7$', '$2{\\times}10^7$'],
+    fontsize='xx-small')
+plt.ylim(0.015, 0.065)
+plt.yticks([0.02, 0.04, 0.06], [])
+
+plt.subplot(right_grid[1, 3])
+plt.plot(*stats['hybrid-sr'], c='b')
+plt.plot(*stats['hybrid-ac'], c='g')
+plt.plot(*stats['hybrid-ac-dynkcpt'], c='#8b4513')
+plt.xlim(0, 2.25e7)
+plt.xticks(
+    [0, 1e7, 2e7], ['$0$', '$1{\\times}10^7$', '$2{\\times}10^7$'],
+    fontsize='xx-small')
+plt.ylim(0.015, 0.065)
+plt.yticks([0.02, 0.04, 0.06], [])
+
+plt.text(
+    0.5, 0.24, 'Mean Op Count',
+    transform=plt.gcf().transFigure,
+    va='center', ha='center')
+plt.text(
+    0.02, 0.68, 'Error Rate',
+    transform=plt.gcf().transFigure,
+    va='center', ha='center',
+    rotation='vertical')
+plt.figlegend(
+    [lns.Line2D([], [], color='b'),
+     lns.Line2D([], [], color='r'),
+     lns.Line2D([], [], color='#eea000'),
+     lns.Line2D([], [], color='y'),
+     lns.Line2D([], [], ls='--', color='r'),
+     lns.Line2D([], [], color='g'),
+     lns.Line2D([], [], ls='--', color='g'),
+     lns.Line2D([], [], ls=':', color='g'),
+     lns.Line2D([], [], color='m'),
+     lns.Line2D([], [], color='c'),
+     lns.Line2D([], [], color='#8b4513')],
+    ['Statically-Routed Nets',
+     'Pragmatic Critic Nets',
+     'Optimistic Critic Nets',
+     'Pragmatic Critic Nets, no TALR',
+     'Pragmatic Critic Nets, Classification Error',
+     'Actor Nets',
+     'Actor Nets, no TALR',
+     'Actor Nets, $k_\\mathrm{dec}=0$',
+     'Actor Nets, Regularized Policy',
+     'Actor Net, Branching',
+     'Actor Net, Dynamic $k_\\mathrm{cpt}$'],
+    loc='lower center', ncol=4)
+
+sns.despine()
+plt.savefig('figures/acc-eff-0.pdf')
+plt.close()
+
+################################################################################
+# Study performance as a function of dataset complexity.
+################################################################################
+
+c = sns.color_palette('Paired')
+plt.figure(figsize=(5, 3.5))
+plt.xlabel('Mean Op Count')
+plt.ylabel('Error Rate')
+plt.plot(*stats['cifar10-sr'], c=c[1], label='CIFAR-10: Statically-Routed Nets')
+plt.plot(*stats['cifar10-ac'], c=c[0], label='CIFAR-10: Actor Nets')
+plt.plot(*stats['cifar5-sr'], c=c[3], label='CIFAR-5: Statically-Routed Nets')
+plt.plot(*stats['cifar5-ac'], c=c[2], label='CIFAR-5: Actor Nets')
+plt.plot(*stats['cifar2-sr'], c=c[5], label='CIFAR-2: Statically-Routed Nets')
+plt.plot(*stats['cifar2-ac'], c=c[4], label='CIFAR-2: Actor Nets')
+plt.xlim(0, 2.25e7)
+plt.xticks([0, 1e7, 2e7], ['$0$', '$1{\\times}10^7$', '$2{\\times}10^7$'])
+plt.ylim(0, 0.3)
+plt.yticks([0.0, 0.1, 0.2, 0.3])
+plt.legend(fontsize='x-small')
+plt.tight_layout()
+sns.despine()
+plt.savefig('figures/acc-eff-1.pdf')
+plt.close()
+
+################################################################################
+# Study performance as function of network width.
+################################################################################
+
+plt.figure(figsize=(5, 2))
+
+plt.subplot(1, 3, 1)
+plt.title('$16 \leq n_\mathrm{chan} \leq 128$')
+plt.ylabel('Error Rate')
+plt.plot(*stats['cifar10-sr'], c='b')
+plt.plot(*stats['cifar10-ac'], c='g')
+plt.xticks([0, 2e7], ['$0$', '$2{\\times}10^7$'])
+
+plt.subplot(1, 3, 2)
+plt.title('$32 \leq n_\mathrm{chan} \leq 256$')
+plt.xlabel('Mean Op Count')
+plt.plot(*stats['cifar10-sr-fat'], c='b')
+plt.plot(*stats['cifar10-ac-fat'], c='g')
+plt.xticks([0, 8e7], ['$0$', '$8{\\times}10^7$'])
+
+plt.subplot(1, 3, 3)
+plt.title('$48 \leq n_\mathrm{chan} \leq 384$')
+plt.plot(*stats['cifar10-sr-fatter'], c='b')
+plt.plot(*stats['cifar10-ac-fatter'], c='g')
+plt.xticks([0, 1.8e8], ['$0$', '$1.8{\\times}10^8$'])
+
+plt.figlegend(
+    [lns.Line2D([], [], color='b'), lns.Line2D([], [], color='g')],
+    ['Statically-Routed Nets', 'Actor Nets'],
+    loc=(0.0, 0), fontsize='x-small')
+
+plt.tight_layout(pad=0.1)
+plt.subplots_adjust(bottom=0.35)
+sns.despine()
+plt.savefig('figures/acc-eff-2.pdf')
+plt.close()
