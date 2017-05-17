@@ -1,6 +1,6 @@
 # Multipath Neural Network Experiments
 
-This repository contains scripts to run the experiments described in the ICML2017 paper *[Deciding How to Decide: Dynamic Routing in Artificial Neural Networks](https://arxiv.org/abs/1703.06217)*, and visualize the results. All scripts are designed to be run from the root directory.
+This repository contains scripts to run the experiments described in the ICML2017 paper *[Deciding How to Decide: Dynamic Routing in Artificial Neural Networks](https://arxiv.org/abs/1703.06217)*, and visualize the results. All scripts are intended to be run from the root directory.
 
 ## Dependencies
 - [Python3](https://www.python.org/downloads/), [Numpy](https://docs.scipy.org/doc/numpy/user/install.html), and [TensorFlow](https://www.tensorflow.org/install/) are required to train and test networks.
