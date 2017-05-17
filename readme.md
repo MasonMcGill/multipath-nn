@@ -23,4 +23,4 @@ This repository contains scripts to run the experiments described in *[Deciding 
 - `scripts/make-acc-eff-plots` writes accuracy-efficiency plots to the `figures/` directory, assuming the prerequisite experiments have been run.
 - `scripts/make-nlds` writes node-link diagrams to the `figures/` directory, assuming the prerequisite experiments have been run.
 - `scripts/make-routing-hists` writes routing histograms to the `figures/` directory, assuming the prerequisite experiments have been run.
-- `scripts/make-pres-figs` generates relatively simple figures, designed to displayed in a live presentation.
+- `scripts/make-pres-figs` generates relatively simple figures, designed to be displayed in a live presentation.

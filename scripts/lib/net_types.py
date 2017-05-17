@@ -97,7 +97,7 @@ class SRNet(Net):
         self.train = opt.minimize(c_tot)
 
 ################################################################################
-# Decision Smoothing Networks
+# Actor Networks
 ################################################################################
 
 class ActorNet(Net):
@@ -181,7 +181,7 @@ class ActorNet(Net):
             self.hypers.α_rtr, self.hypers.talr)
 
 ################################################################################
-# Cost Regression Networks
+# Critic Networks
 ################################################################################
 
 class CriticNet(Net):
