@@ -1,3 +1,5 @@
+![](banner.png)
+
 # Multipath Neural Network Experiments
 
 This repository contains scripts to run the experiments described in the ICML2017 paper *[Deciding How to Decide: Dynamic Routing in Artificial Neural Networks](https://arxiv.org/abs/1703.06217)*, and visualize the results. All scripts are intended to be run from the root directory.
